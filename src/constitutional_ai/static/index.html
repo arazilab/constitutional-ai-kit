@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constitutional AI</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b0d10;
+        --panel: #12161c;
+        --panel2: #0f1318;
+        --text: #e8eef7;
+        --muted: #aab6c5;
+        --border: #232b35;
+        --accent: #66b3ff;
+        --danger: #ff6b6b;
+        --ok: #3ddc97;
+        --radius: 14px;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7fb;
+          --panel: #ffffff;
+          --panel2: #fafbff;
+          --text: #0a0f18;
+          --muted: #4b5a70;
+          --border: #d7deea;
+          --accent: #0b63ff;
+          --danger: #d61f2c;
+          --ok: #087f5b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      .subtitle {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      nav {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tab,
+      .btn {
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text);
+        border-radius: 10px;
+        cursor: pointer;
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+      .tab[aria-selected="true"] {
+        border-color: var(--accent);
+      }
+      .btn.primary {
+        border-color: var(--accent);
+        background: rgba(102, 179, 255, 0.15);
+      }
+      .btn.danger {
+        border-color: rgba(255, 107, 107, 0.4);
+      }
+      .page[hidden] {
+        display: none;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .cardHead {
+        border-bottom: 1px solid var(--border);
+        padding: 10px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .cardBody {
+        padding: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 12px;
+      }
+      @media (max-width: 960px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      textarea,
+      input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel2);
+        color: var(--text);
+        padding: 9px 10px;
+        font: inherit;
+      }
+      textarea {
+        min-height: 95px;
+        resize: vertical;
+      }
+      .msgList {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .msg {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .msg.user {
+        border-color: rgba(102, 179, 255, 0.35);
+      }
+      .msg.assistant {
+        border-color: rgba(61, 220, 151, 0.35);
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+      .content {
+        white-space: pre-wrap;
+        line-height: 1.35;
+      }
+      .pill {
+        border: 1px solid var(--border);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 5px 8px;
+        font-size: 12px;
+      }
+      .pill.ok {
+        color: var(--ok);
+      }
+      .pill.bad {
+        color: var(--danger);
+      }
+      .small {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      details {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      @media (max-width: 960px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <h1>Constitutional AI Package</h1>
+          <div class="subtitle">GUI and CLI share one Python engine + one config</div>
+        </div>
+        <nav>
+          <button class="tab" data-page="chat" aria-selected="true">Chat</button>
+          <button class="tab" data-page="constitution" aria-selected="false">Constitution</button>
+          <button class="tab" data-page="settings" aria-selected="false">Settings</button>
+          <button class="tab" data-page="transcript" aria-selected="false">Transcript</button>
+        </nav>
+      </header>
+
+      <section class="page" id="page-chat">
+        <div class="grid">
+          <div class="card">
+            <div class="cardHead">
+              <div class="row">
+                <strong>Conversation</strong>
+                <span id="status-pill" class="pill">idle</span>
+              </div>
+              <button id="btn-clear-chat" class="btn danger">Clear chat</button>
+            </div>
+            <div class="cardBody">
+              <div id="chat-list" class="msgList"></div>
+              <label for="chat-input" class="small">New message</label>
+              <textarea id="chat-input" placeholder="Ask a question..."></textarea>
+              <div class="row" style="margin-top: 8px; justify-content: flex-end">
+                <button id="btn-send" class="btn primary">Send</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="cardHead">
+              <strong>Run summary</strong>
+              <button id="btn-save-config" class="btn">Save config</button>
+            </div>
+            <div class="cardBody">
+              <div class="row">
+                <span class="pill" id="pill-rules">rules: 0</span>
+                <span class="pill" id="pill-key">api key: missing</span>
+              </div>
+              <div class="small" style="margin-top: 8px">
+                The GUI sends each turn to the Python engine on this server. Use Save config to persist shared preferences
+                for CLI and notebooks.
+              </div>
+              <div style="margin-top: 10px">
+                <button id="btn-reload-config" class="btn">Reload config from server</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-constitution" hidden>
+        <div class="card">
+          <div class="cardHead">
+            <strong>Constitution rules</strong>
+            <div class="row">
+              <button id="btn-load-sample" class="btn">Load sample</button>
+              <button id="btn-save-rules" class="btn primary">Save</button>
+            </div>
+          </div>
+          <div class="cardBody">
+            <div class="small">One rule per line. These rules are shared across GUI, CLI, and notebooks.</div>
+            <textarea id="rules-text"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings" hidden>
+        <div class="card">
+          <div class="cardHead">
+            <strong>Runtime settings + prompts</strong>
+            <div class="row">
+              <button id="btn-save-settings" class="btn primary">Save</button>
+              <button id="btn-reset-settings" class="btn">Reset defaults</button>
+            </div>
+          </div>
+          <div class="cardBody">
+            <div class="split">
+              <div>
+                <label class="small" for="set-api-key">API key</label>
+                <input id="set-api-key" type="password" placeholder="sk-..." />
+              </div>
+              <div>
+                <label class="small" for="set-base-url">Base URL</label>
+                <input id="set-base-url" type="text" />
+              </div>
+            </div>
+            <div class="split">
+              <div>
+                <label class="small" for="set-writer-model">Writer model</label>
+                <input id="set-writer-model" type="text" />
+              </div>
+              <div>
+                <label class="small" for="set-judge-model">Judge model</label>
+                <input id="set-judge-model" type="text" />
+              </div>
+            </div>
+            <div class="split">
+              <div>
+                <label class="small" for="set-temperature">Temperature</label>
+                <input id="set-temperature" type="number" min="0" max="2" step="0.1" />
+              </div>
+              <div>
+                <label class="small" for="set-max-tokens">Max tokens</label>
+                <input id="set-max-tokens" type="number" min="64" step="64" />
+              </div>
+            </div>
+            <div class="split">
+              <div>
+                <label class="small" for="set-max-revisions">Max revisions per rule</label>
+                <input id="set-max-revisions" type="number" min="0" step="1" />
+              </div>
+              <div>
+                <label class="small" for="set-timeout-ms">Timeout (ms)</label>
+                <input id="set-timeout-ms" type="number" min="1000" step="500" />
+              </div>
+            </div>
+
+            <label class="small" for="prompt-writer">Writer system prompt</label>
+            <textarea id="prompt-writer"></textarea>
+            <label class="small" for="prompt-pass">Judge pass system prompt</label>
+            <textarea id="prompt-pass"></textarea>
+            <label class="small" for="prompt-critique">Judge critique system prompt</label>
+            <textarea id="prompt-critique"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-transcript" hidden>
+        <div class="card">
+          <div class="cardHead">
+            <strong>Turn transcript</strong>
+            <div class="row">
+              <button id="btn-export" class="btn">Export JSON</button>
+              <button id="btn-clear-transcript" class="btn danger">Clear</button>
+            </div>
+          </div>
+          <div class="cardBody">
+            <div id="transcript-list" class="msgList"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
