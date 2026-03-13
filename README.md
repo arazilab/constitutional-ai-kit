@@ -1,28 +1,14 @@
 # Constitutional AI Package (CLI + GUI + Notebook)
 
-This project is now a **Python package** with one shared constitutional AI engine.
+A Python package for constitutional AI with one shared engine across:
 
-- CLI calls the engine.
-- GUI calls the same engine through a local HTTP API.
-- Notebooks import and call the same engine directly.
-
-No logic is duplicated between interfaces.
-
-## What Changed
-
-Before: single `index.html` file contained both UI and constitutional loop logic.
-
-Now:
-
-- `src/constitutional_ai/engine.py` contains the full writer/judge constitutional loop.
-- `src/constitutional_ai/cli.py` provides command-line usage.
-- `src/constitutional_ai/server.py` provides a local GUI server and API.
-- `src/constitutional_ai/static/` contains GUI assets (client-only UI).
-- `src/constitutional_ai/config.py` manages shared configuration.
+- CLI
+- Local HTML GUI
+- Python scripts and notebooks
 
 ## Install
 
-From this repository root:
+From the repository root:
 
 ```bash
 pip install -e .
@@ -30,17 +16,39 @@ pip install -e .
 
 Python requirement: `>=3.10`
 
-## Use in Your Own Python Script
+## Quick Start
 
-If someone clones this repo, they can use it as a library in any Python script after installing:
+### 1. Set API key
 
 ```bash
-git clone <repo-url>
-cd ConstitutionalAI_GUI
-pip install -e .
+export OPENAI_API_KEY="sk-..."
 ```
 
-Then in a script:
+### 2. Run CLI
+
+Single turn:
+
+```bash
+constitutional-ai run --prompt "What is constitutional AI?"
+```
+
+Interactive chat:
+
+```bash
+constitutional-ai chat
+```
+
+### 3. Run GUI
+
+```bash
+constitutional-ai-gui
+```
+
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
+
+## Use in Your Own Python Script
+
+After cloning and installing this repo, any Python script can import the package:
 
 ```python
 from constitutional_ai.config import load_config
@@ -53,57 +61,27 @@ turn = run_constitutional_turn(user_text=thread[-1].content, thread_messages=thr
 print(turn.final)
 ```
 
-This uses the exact same engine and config model as the CLI and GUI.
+This uses the same engine and config model as the CLI and GUI.
 
-## Quick Start
-
-### 1. Set API key
-
-```bash
-export OPENAI_API_KEY="sk-..."
-```
-
-You can also save the key in the shared config file (see below), but env var is recommended.
-
-### 2. Run CLI (single turn)
-
-```bash
-constitutional-ai run --prompt "What is constitutional AI?"
-```
-
-### 3. Run interactive CLI chat
-
-```bash
-constitutional-ai chat
-```
-
-### 4. Run GUI
-
-```bash
-constitutional-ai-gui
-```
-
-Then open `http://127.0.0.1:8765` if it does not open automatically.
-
-## Shared Config (Used by CLI + GUI + Notebooks)
+## Shared Config
 
 Default path:
 
 - `~/.constitutional_ai/config.json`
 
-Create it:
+Create starter config:
 
 ```bash
 constitutional-ai config init
 ```
 
-Inspect current effective config:
+Show effective config:
 
 ```bash
 constitutional-ai config show --redact-key
 ```
 
-### Config shape
+Config shape:
 
 ```json
 {
@@ -126,40 +104,26 @@ constitutional-ai config show --redact-key
 }
 ```
 
-The GUI reads/writes this same config via `/api/config`.
+The GUI reads and writes this same config via `/api/config`.
 
-## Notebook Usage (Colab/Jupyter)
+## Examples
 
-```python
-from constitutional_ai.config import load_config
-from constitutional_ai.engine import run_constitutional_turn
-from constitutional_ai.models import ChatMessage
+See the [examples](./examples) folder for scenario-based examples with separate READMEs:
 
-cfg = load_config()  # same config used by CLI/GUI
-history = [ChatMessage(role="user", content="Explain gradient descent simply.")]
-turn = run_constitutional_turn(user_text=history[-1].content, thread_messages=history, config=cfg)
-print(turn.final)
-```
+- different model choices
+- multi-turn history handling
+- different constitutions for different tasks
+- single-turn minimal script usage
 
-This gives you the same constitution, prompts, and model settings as GUI/CLI.
-
-## API Endpoints (Local GUI Server)
+## Local API Endpoints (GUI server)
 
 - `GET /` -> GUI
 - `GET /api/config` -> current shared config
 - `POST /api/config` -> merge and persist shared config
 - `POST /api/turn` -> run one constitutional turn
 
-## Development Notes
-
-- `index.html` at repo root is now a simple pointer page.
-- Main GUI assets live in `src/constitutional_ai/static/`.
-- Package entrypoints:
-  - `constitutional-ai`
-  - `constitutional-ai-gui`
-
 ## Security Notes
 
-- Prefer `OPENAI_API_KEY` via environment over storing API keys in files.
+- Prefer `OPENAI_API_KEY` environment variable over storing keys in files.
 - If you store API keys in config, treat `~/.constitutional_ai/config.json` as sensitive.
-- GUI traffic is local to your machine by default (`127.0.0.1`).
+- GUI server binds to local host by default (`127.0.0.1`).
