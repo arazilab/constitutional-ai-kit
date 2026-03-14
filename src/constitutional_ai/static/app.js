@@ -60,9 +60,35 @@ function setBusy(isBusy, label) {
 /** Convert a streamed run event into a concise status label. */
 function statusLabelFromEvent(event) {
   if (!event || !event.stage) return "running constitutional loop...";
-  const rulePart = Number.isFinite(event.rule_index) ? ` | rule ${event.rule_index + 1}` : "";
-  const iterPart = Number.isFinite(event.iteration) ? ` | iter ${event.iteration}` : "";
-  return `${event.stage}${rulePart}${iterPart}`;
+  const stageMap = {
+    initial_started: "Preparing initial draft",
+    initial_completed: "Initial draft ready",
+    parallel_started: "Parallel mode started",
+    parallel_pass_checks_started: "Parallel: checking all rules",
+    parallel_pass_checks_completed: "Parallel: rule checks complete",
+    parallel_critique_started: "Parallel: critiquing failed rules",
+    parallel_critique_completed: "Parallel: critiques complete",
+    parallel_revision_started: "Parallel: revising answer",
+    parallel_revision_completed: "Parallel: revision complete",
+    parallel_iteration_limit_reached: "Parallel: iteration limit reached",
+    parallel_completed: "Parallel: all rules satisfied",
+    sequential_started: "Sequential mode started",
+    sequential_check_started: "Sequential: checking rule",
+    sequential_not_applicable: "Sequential: rule not applicable",
+    sequential_passed: "Sequential: rule passed",
+    sequential_failed: "Sequential: rule failed",
+    sequential_revision_started: "Sequential: revising for rule",
+    sequential_revision_completed: "Sequential: revision complete for rule",
+    sequential_revision_limit_reached: "Sequential: revision limit reached for rule",
+    sequential_completed: "Sequential: all checks complete",
+    turn_stopped: "Stopped by user",
+    turn_timed_out: "Stopped by time limit",
+    turn_completed: "Completed",
+  };
+  const base = stageMap[event.stage] || "Running";
+  const rulePart = Number.isFinite(event.rule_index) ? ` (rule ${event.rule_index + 1})` : "";
+  const iterPart = Number.isFinite(event.iteration) ? ` (round ${event.iteration + 1})` : "";
+  return `${base}${rulePart}${iterPart}`;
 }
 
 /** Whether a usable API key exists from current draft input or loaded config/env. */
