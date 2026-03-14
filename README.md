@@ -145,7 +145,7 @@ See the [examples](./examples) folder for scenario-based examples with separate 
 You can paste this template into an LLM prompt when requesting repo changes:
 
 ```text
-Read /Users/mn864/Documents/git/constitutional-ai-kit/README.llm and follow it strictly.
+Read `README.llm` in this repository and follow it strictly.
 
 Task:
 <describe the change>
