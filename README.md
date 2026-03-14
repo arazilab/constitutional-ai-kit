@@ -124,6 +124,9 @@ export CONSTITUTIONAL_AI_DEBUG=1
 
 This logs final request URLs without exposing API keys.
 
+TLS note:
+- The shared client uses system certificates, supports `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and will use `certifi` automatically when available.
+
 ## Examples
 
 See the [examples](./examples) folder for scenario-based examples with separate READMEs:

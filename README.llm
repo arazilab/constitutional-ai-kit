@@ -229,6 +229,7 @@ chat_completion(
 <context_6_notes>
 - Final endpoint URL is built centrally from normalized base URL.
 - Debug URL logging can be enabled with `CONSTITUTIONAL_AI_DEBUG=1`.
+- TLS uses system CA roots, supports `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and uses `certifi` when available.
 - Never log API keys.
 </context_6_notes>
 
