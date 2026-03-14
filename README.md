@@ -17,6 +17,7 @@ pip install -e .
 ```
 
 Python requirement: `>=3.10`
+Runtime dependency installed with package: `certifi` (for CA bundle handling).
 
 ## Quick Start
 
@@ -126,6 +127,9 @@ This logs final request URLs without exposing API keys.
 
 TLS note:
 - The shared client uses system certificates, supports `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and will use `certifi` automatically when available.
+
+Transcript note:
+- Turn transcripts now include `run.events` timeline entries, including initial draft stage and sequential/parallel stage progress.
 
 ## Examples
 

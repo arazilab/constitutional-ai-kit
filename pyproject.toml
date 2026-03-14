@@ -19,6 +19,9 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
+dependencies = [
+  "certifi>=2024.2.2",
+]
 
 [project.scripts]
 constitutional-ai = "constitutional_ai.cli:main"

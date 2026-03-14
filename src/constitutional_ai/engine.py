@@ -8,7 +8,7 @@ from typing import Any
 
 from constitutional_ai.client import chat_completion
 from constitutional_ai.config import AppConfig
-from constitutional_ai.models import ChatMessage, JudgeCheck, TurnTranscript, UsageStats, WriterDraft, now_iso
+from constitutional_ai.models import ChatMessage, JudgeCheck, TurnEvent, TurnTranscript, UsageStats, WriterDraft, now_iso
 
 
 def _safe_json_parse(text: str) -> dict[str, Any] | None:
@@ -219,7 +219,29 @@ def run_constitutional_turn(
 
     thread = _collect_message_list(thread_messages)
     turn = TurnTranscript(user=user_text, thread=thread, rules=rules)
+    mode = settings.execution_mode
 
+    def add_event(
+        *,
+        stage: str,
+        message: str,
+        rule_index: int | None = None,
+        rule: str | None = None,
+        iteration: int | None = None,
+    ) -> None:
+        turn.events.append(
+            TurnEvent(
+                at=now_iso(),
+                stage=stage,
+                message=message,
+                mode=mode,
+                rule_index=rule_index,
+                rule=rule,
+                iteration=iteration,
+            )
+        )
+
+    add_event(stage="initial_started", message="Generating initial writer draft.")
     initial = chat_completion(
         api_key=settings.api_key,
         base_url=settings.base_url,
@@ -239,12 +261,15 @@ def run_constitutional_turn(
         )
     )
     turn.usage.add(initial.usage)
+    add_event(stage="initial_completed", message="Initial writer draft generated.")
 
     thread_text = _format_thread_for_prompt(thread_messages)
 
     if settings.execution_mode == "parallel":
+        add_event(stage="parallel_started", message="Running in parallel mode.")
         revision_rounds = 0
         while True:
+            add_event(stage="parallel_pass_checks_started", message="Checking all rules in parallel.", iteration=revision_rounds)
             with ThreadPoolExecutor(max_workers=max(1, len(rules))) as executor:
                 pass_results = list(
                     executor.map(
@@ -283,12 +308,28 @@ def run_constitutional_turn(
                     failed_rule_indices.append(rule_index)
 
             turn.judge_checks.extend(checks_for_round)
+            add_event(
+                stage="parallel_pass_checks_completed",
+                message=f"Completed parallel pass checks. Failed rules: {len(failed_rule_indices)}.",
+                iteration=revision_rounds,
+            )
 
             if not failed_rule_indices:
+                add_event(stage="parallel_completed", message="No failing rules remain. Parallel loop complete.")
                 break
             if settings.parallel_max_iterations > 0 and revision_rounds >= settings.parallel_max_iterations:
+                add_event(
+                    stage="parallel_iteration_limit_reached",
+                    message=f"Reached parallel_max_iterations={settings.parallel_max_iterations}. Stopping revisions.",
+                    iteration=revision_rounds,
+                )
                 break
 
+            add_event(
+                stage="parallel_critique_started",
+                message=f"Generating critiques in parallel for {len(failed_rule_indices)} failing rules.",
+                iteration=revision_rounds,
+            )
             with ThreadPoolExecutor(max_workers=max(1, len(failed_rule_indices))) as executor:
                 critique_results = list(
                     executor.map(
@@ -316,6 +357,7 @@ def run_constitutional_turn(
                 check.critique_raw = critique_raw
                 check.critique_usage = critique_usage
                 turn.usage.add(critique_usage)
+            add_event(stage="parallel_critique_completed", message="Parallel critique stage complete.", iteration=revision_rounds)
 
             combined_critique = "\n\n".join(
                 [
@@ -338,6 +380,7 @@ def run_constitutional_turn(
                 ]
             )
 
+            add_event(stage="parallel_revision_started", message="Applying combined writer revision.", iteration=revision_rounds)
             current, revision_usage = _writer_revision(
                 api_key=settings.api_key,
                 base_url=settings.base_url,
@@ -362,12 +405,15 @@ def run_constitutional_turn(
                 )
             )
             turn.usage.add(revision_usage)
+            add_event(stage="parallel_revision_completed", message="Combined writer revision complete.", iteration=revision_rounds)
             revision_rounds += 1
     else:
+        add_event(stage="sequential_started", message="Running in sequential mode.")
         for rule_index, rule in enumerate(rules):
             revisions_for_rule = 0
 
             while True:
+                add_event(stage="sequential_check_started", message=f"Checking rule {rule_index + 1}.", rule_index=rule_index, rule=rule)
                 applies, passed, pass_raw, pass_usage = _judge_pass_for_rule(
                     api_key=settings.api_key,
                     base_url=settings.base_url,
@@ -416,13 +462,46 @@ def run_constitutional_turn(
                 )
                 turn.judge_checks.append(check)
                 turn.usage.add(pass_usage)
+                if not applies:
+                    add_event(
+                        stage="sequential_not_applicable",
+                        message=f"Rule {rule_index + 1} marked not applicable.",
+                        rule_index=rule_index,
+                        rule=rule,
+                    )
+                elif passed:
+                    add_event(
+                        stage="sequential_passed",
+                        message=f"Rule {rule_index + 1} passed.",
+                        rule_index=rule_index,
+                        rule=rule,
+                    )
+                else:
+                    add_event(
+                        stage="sequential_failed",
+                        message=f"Rule {rule_index + 1} failed.",
+                        rule_index=rule_index,
+                        rule=rule,
+                    )
 
                 if not applies or passed:
                     break
                 if revisions_for_rule >= settings.max_revisions_per_rule:
+                    add_event(
+                        stage="sequential_revision_limit_reached",
+                        message=f"Reached max revisions for rule {rule_index + 1}.",
+                        rule_index=rule_index,
+                        rule=rule,
+                    )
                     break
 
                 revisions_for_rule += 1
+                add_event(
+                    stage="sequential_revision_started",
+                    message=f"Revising draft for rule {rule_index + 1}.",
+                    rule_index=rule_index,
+                    rule=rule,
+                )
                 current, revision_usage = _writer_revision(
                     api_key=settings.api_key,
                     base_url=settings.base_url,
@@ -449,6 +528,14 @@ def run_constitutional_turn(
                     )
                 )
                 turn.usage.add(revision_usage)
+                add_event(
+                    stage="sequential_revision_completed",
+                    message=f"Revision complete for rule {rule_index + 1}.",
+                    rule_index=rule_index,
+                    rule=rule,
+                )
+        add_event(stage="sequential_completed", message="Sequential loop complete.")
 
     turn.final = current
+    add_event(stage="turn_completed", message="Turn completed with final answer.")
     return turn

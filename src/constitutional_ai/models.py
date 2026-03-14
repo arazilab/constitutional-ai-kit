@@ -100,6 +100,19 @@ class JudgeCheck:
 
 
 @dataclass(slots=True)
+class TurnEvent:
+    """A timeline event emitted during a constitutional turn."""
+
+    at: str
+    stage: str
+    message: str
+    mode: str
+    rule_index: int | None = None
+    rule: str | None = None
+    iteration: int | None = None
+
+
+@dataclass(slots=True)
 class TurnTranscript:
     """Full structured transcript of one constitutional turn."""
 
@@ -110,6 +123,7 @@ class TurnTranscript:
     at: str = field(default_factory=now_iso)
     writer_drafts: list[WriterDraft] = field(default_factory=list)
     judge_checks: list[JudgeCheck] = field(default_factory=list)
+    events: list[TurnEvent] = field(default_factory=list)
     usage: UsageStats = field(default_factory=UsageStats)
     final: str = ""
 
@@ -118,6 +132,7 @@ class TurnTranscript:
         raw = asdict(self)
         raw["writer"] = {"drafts": raw.pop("writer_drafts")}
         raw["judge"] = {"checks": raw.pop("judge_checks")}
+        raw["run"] = {"events": raw.pop("events")}
         # Preserve backward-compatible key names used by the original UI.
         for check in raw["judge"]["checks"]:
             check["pass"] = check.pop("passed")

@@ -121,6 +121,31 @@ function renderTranscript() {
     finalBlock.querySelector(".content").textContent = turn.final || "";
     details.appendChild(finalBlock);
 
+    const initialDraft = (turn.writer?.drafts || []).find((draft) => draft.kind === "initial");
+    if (initialDraft?.content) {
+      const initial = document.createElement("details");
+      initial.style.marginTop = "8px";
+      initial.innerHTML = `<summary>Initial draft state</summary><div class="msg" style="margin-top:6px"><div class="content"></div></div>`;
+      initial.querySelector(".content").textContent = initialDraft.content;
+      details.appendChild(initial);
+    }
+
+    const events = turn.run?.events || [];
+    if (events.length) {
+      const timeline = document.createElement("details");
+      timeline.style.marginTop = "8px";
+      timeline.innerHTML = `<summary>Run stages (${events.length})</summary><div class="small" style="margin-top:6px"></div>`;
+      const timelineBody = timeline.querySelector(".small");
+      for (const event of events) {
+        const item = document.createElement("div");
+        const rulePart = Number.isFinite(event.rule_index) ? ` | rule ${event.rule_index + 1}` : "";
+        const iterPart = Number.isFinite(event.iteration) ? ` | iter ${event.iteration}` : "";
+        item.textContent = `${event.stage}${rulePart}${iterPart}: ${event.message}`;
+        timelineBody.appendChild(item);
+      }
+      details.appendChild(timeline);
+    }
+
     for (const check of turn.judge?.checks || []) {
       const checkNode = document.createElement("details");
       checkNode.style.marginTop = "8px";
@@ -510,7 +535,6 @@ function bindEvents() {
     "set-execution-mode",
     "set-parallel-max-iterations",
     "set-timeout-ms",
-    "rules-text",
     "prompt-writer",
     "prompt-pass",
     "prompt-critique",
@@ -523,6 +547,16 @@ function bindEvents() {
 
   document.getElementById("set-api-key").addEventListener("input", () => {
     syncFormFromState();
+  });
+
+  // Keep constitution textarea free-form while typing; parse/normalize only during save/run.
+  document.getElementById("rules-text").addEventListener("input", () => {
+    const lines = document
+      .getElementById("rules-text")
+      .value.split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    document.getElementById("pill-rules").textContent = `rules: ${lines.length}`;
   });
 }
 
