@@ -30,12 +30,14 @@ Single turn:
 
 ```bash
 constitutional-ai run --prompt "What is constitutional AI?"
+constitutional-ai run --prompt "What is constitutional AI?" --execution-mode parallel --parallel-max-iterations 1
 ```
 
 Interactive chat:
 
 ```bash
 constitutional-ai chat
+constitutional-ai chat --execution-mode sequential
 ```
 
 ### 3. Run GUI
@@ -93,6 +95,8 @@ Config shape:
     "temperature": 0.4,
     "max_tokens": 650,
     "max_revisions_per_rule": 1,
+    "execution_mode": "sequential",
+    "parallel_max_iterations": 0,
     "timeout_ms": 45000
   },
   "rules": ["..."],

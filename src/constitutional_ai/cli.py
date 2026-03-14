@@ -36,6 +36,10 @@ def _run_once(args: argparse.Namespace) -> int:
         overrides.setdefault("settings", {})["writer_model"] = args.writer_model
     if args.judge_model:
         overrides.setdefault("settings", {})["judge_model"] = args.judge_model
+    if args.execution_mode:
+        overrides.setdefault("settings", {})["execution_mode"] = args.execution_mode
+    if args.parallel_max_iterations is not None:
+        overrides.setdefault("settings", {})["parallel_max_iterations"] = args.parallel_max_iterations
 
     merged = merge_config(config, overrides)
     user_msg = ChatMessage(role="user", content=args.prompt)
@@ -51,6 +55,13 @@ def _run_once(args: argparse.Namespace) -> int:
 def _chat_loop(args: argparse.Namespace) -> int:
     """Run a local REPL chat loop using the shared constitutional engine."""
     config = load_config(args.config)
+    overrides: dict[str, Any] = {}
+    if args.execution_mode:
+        overrides.setdefault("settings", {})["execution_mode"] = args.execution_mode
+    if args.parallel_max_iterations is not None:
+        overrides.setdefault("settings", {})["parallel_max_iterations"] = args.parallel_max_iterations
+    if overrides:
+        config = merge_config(config, overrides)
     history: list[ChatMessage] = []
 
     print("Constitutional AI chat. Type '/exit' to quit.")
@@ -109,11 +120,35 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--api-key", default=None, help="Optional API key override")
     run_parser.add_argument("--writer-model", default=None, help="Optional writer model override")
     run_parser.add_argument("--judge-model", default=None, help="Optional judge model override")
+    run_parser.add_argument(
+        "--execution-mode",
+        choices=["sequential", "parallel"],
+        default=None,
+        help="Override constitutional execution mode",
+    )
+    run_parser.add_argument(
+        "--parallel-max-iterations",
+        type=int,
+        default=None,
+        help="Parallel mode rewrite cap (0 means run until no rules fail)",
+    )
     run_parser.add_argument("--json", action="store_true", help="Print full transcript JSON")
     run_parser.set_defaults(func=_run_once)
 
     chat_parser = subparsers.add_parser("chat", help="Interactive REPL chat")
     chat_parser.add_argument("--config", default=None, help="Path to config JSON")
+    chat_parser.add_argument(
+        "--execution-mode",
+        choices=["sequential", "parallel"],
+        default=None,
+        help="Override constitutional execution mode for this chat session",
+    )
+    chat_parser.add_argument(
+        "--parallel-max-iterations",
+        type=int,
+        default=None,
+        help="Parallel mode rewrite cap (0 means run until no rules fail)",
+    )
     chat_parser.set_defaults(func=_chat_loop)
 
     config_parser = subparsers.add_parser("config", help="Manage config")

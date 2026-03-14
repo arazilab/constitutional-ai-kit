@@ -17,3 +17,4 @@ export OPENAI_API_KEY="sk-..."
 - `model_variants/`: run the same task with different writer/judge model pairs
 - `history_management/`: maintain and reuse multi-turn chat history
 - `constitution_variants/`: swap constitutions for different policy goals
+- `parallel_mode/`: run parallel judge/critic loops with bounded and unbounded iteration caps

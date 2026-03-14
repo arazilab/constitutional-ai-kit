@@ -31,12 +31,18 @@ class RuntimeSettings:
     temperature: float = 0.4
     max_tokens: int = 650
     max_revisions_per_rule: int = 1
+    execution_mode: str = "sequential"
+    parallel_max_iterations: int = 0
     timeout_ms: int = 45_000
 
     @staticmethod
     def from_mapping(value: dict[str, Any] | None) -> "RuntimeSettings":
         """Create settings from untrusted mapping input with defaults."""
         value = value or {}
+        execution_mode = str(value.get("execution_mode", "sequential") or "sequential").strip().lower()
+        if execution_mode not in {"sequential", "parallel"}:
+            execution_mode = "sequential"
+
         return RuntimeSettings(
             api_key=str(value.get("api_key", "") or ""),
             base_url=str(value.get("base_url", "https://api.openai.com") or "https://api.openai.com"),
@@ -45,6 +51,8 @@ class RuntimeSettings:
             temperature=float(value.get("temperature", 0.4) or 0.4),
             max_tokens=int(value.get("max_tokens", 650) or 650),
             max_revisions_per_rule=int(value.get("max_revisions_per_rule", 1) or 1),
+            execution_mode=execution_mode,
+            parallel_max_iterations=max(0, int(value.get("parallel_max_iterations", 0) or 0)),
             timeout_ms=int(value.get("timeout_ms", 45_000) or 45_000),
         )
 

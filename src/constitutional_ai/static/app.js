@@ -156,6 +156,8 @@ function readFormIntoState() {
     temperature: Number(document.getElementById("set-temperature").value || 0.4),
     max_tokens: Number(document.getElementById("set-max-tokens").value || 650),
     max_revisions_per_rule: Number(document.getElementById("set-max-revisions").value || 1),
+    execution_mode: document.getElementById("set-execution-mode").value || "sequential",
+    parallel_max_iterations: Number(document.getElementById("set-parallel-max-iterations").value || 0),
     timeout_ms: Number(document.getElementById("set-timeout-ms").value || 45000),
   };
   state.config.prompts = {
@@ -183,6 +185,8 @@ function syncFormFromState() {
   document.getElementById("set-temperature").value = String(s.temperature ?? 0.4);
   document.getElementById("set-max-tokens").value = String(s.max_tokens ?? 650);
   document.getElementById("set-max-revisions").value = String(s.max_revisions_per_rule ?? 1);
+  document.getElementById("set-execution-mode").value = s.execution_mode || "sequential";
+  document.getElementById("set-parallel-max-iterations").value = String(s.parallel_max_iterations ?? 0);
   document.getElementById("set-timeout-ms").value = String(s.timeout_ms ?? 45000);
   document.getElementById("rules-text").value = (state.config.rules || []).join("\n");
 
@@ -373,6 +377,8 @@ function bindEvents() {
           temperature: 0.4,
           max_tokens: 650,
           max_revisions_per_rule: 1,
+          execution_mode: "sequential",
+          parallel_max_iterations: 0,
           timeout_ms: 45000,
         },
         rules: state.config?.rules || [],
@@ -419,6 +425,8 @@ function bindEvents() {
     "set-temperature",
     "set-max-tokens",
     "set-max-revisions",
+    "set-execution-mode",
+    "set-parallel-max-iterations",
     "set-timeout-ms",
     "rules-text",
     "prompt-writer",

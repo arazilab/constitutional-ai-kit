@@ -326,6 +326,20 @@
                 <input id="set-timeout-ms" type="number" min="1000" step="500" />
               </div>
             </div>
+            <div class="split">
+              <div>
+                <label class="small" for="set-execution-mode">Execution mode</label>
+                <select id="set-execution-mode">
+                  <option value="sequential">Sequential</option>
+                  <option value="parallel">Parallel</option>
+                </select>
+              </div>
+              <div>
+                <label class="small" for="set-parallel-max-iterations">Parallel max iterations</label>
+                <input id="set-parallel-max-iterations" type="number" min="0" step="1" />
+                <div class="small">0 means keep iterating until no rules are triggered.</div>
+              </div>
+            </div>
 
             <label class="small" for="prompt-writer">Writer system prompt</label>
             <textarea id="prompt-writer"></textarea>
