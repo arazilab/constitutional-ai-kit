@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from constitutional_ai.client import OpenAIAPIError, chat_completion
 from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, get_api_key_source, load_config, merge_config, save_config
@@ -45,6 +46,7 @@ class AppState:
         self.config_created = not config_path.exists()
         self.load_error = ""
         self._lock = threading.Lock()
+        self._cancelled_turns: set[str] = set()
         if self.config_created:
             save_config(AppConfig(), config_path)
         try:
@@ -78,6 +80,26 @@ class AppState:
                 "api_key_present": effective_has_key,
                 "load_error": self.load_error,
             }
+
+    def start_turn(self, turn_id: str) -> None:
+        """Register a new turn id and clear prior cancel marker."""
+        with self._lock:
+            self._cancelled_turns.discard(turn_id)
+
+    def cancel_turn(self, turn_id: str) -> None:
+        """Mark a running turn as cancelled."""
+        with self._lock:
+            self._cancelled_turns.add(turn_id)
+
+    def should_stop_turn(self, turn_id: str) -> bool:
+        """Return True when a turn id has been cancelled."""
+        with self._lock:
+            return turn_id in self._cancelled_turns
+
+    def end_turn(self, turn_id: str) -> None:
+        """Cleanup cancel marker for a completed turn."""
+        with self._lock:
+            self._cancelled_turns.discard(turn_id)
 
 
 def _sanitize_settings_payload(settings: Any) -> dict[str, Any] | None:
@@ -131,6 +153,14 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/turn-stream":
             self._handle_turn_stream(payload)
+            return
+        if self.path == "/api/turn-cancel":
+            turn_id = str(payload.get("turn_id", "") or "").strip()
+            if not turn_id:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "turn_id is required."})
+                return
+            self.server.state.cancel_turn(turn_id)
+            _json_response(self, HTTPStatus.OK, {"ok": True, "turn_id": turn_id})
             return
 
         if self.path == "/api/config":
@@ -238,6 +268,8 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
+        turn_id = str(payload.get("turn_id", "") or "").strip() or str(uuid4())
+        self.server.state.start_turn(turn_id)
 
         try:
             turn = run_constitutional_turn(
@@ -245,11 +277,14 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
                 thread_messages=thread_messages,
                 config=runtime_config,
                 on_event=lambda event: _stream_json_line(self, {"type": "event", "event": asdict(event)}),
+                should_stop=lambda: self.server.state.should_stop_turn(turn_id),
             )
             _stream_json_line(self, {"type": "turn", "turn": turn.to_dict()})
         except Exception as exc:  # noqa: BLE001
             _stream_json_line(self, {"type": "error", "error": str(exc)})
             return
+        finally:
+            self.server.state.end_turn(turn_id)
 
     def _handle_test_connection(self, payload: dict[str, Any]) -> None:
         """Run a lightweight OpenAI connectivity check with current/override settings."""

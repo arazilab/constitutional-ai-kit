@@ -95,6 +95,7 @@ normalize_base_url(value: str) -> str
 - `OPENAI_API_KEY` environment variable overrides stored API key at load time.
 - `base_url` is normalized/validated to prevent malformed OpenAI endpoint construction.
 - Runtime settings include execution mode and parallel iteration limit.
+- Runtime settings include `max_iteration_ms` (`0` means no time-budget limit).
 </context_2_notes>
 
 <context_2_example>
@@ -151,11 +152,13 @@ CLI interface for single-turn and interactive use. It is a thin wrapper around s
 constitutional-ai run --prompt "<text>" [--config PATH] [--rules-file PATH]
                       [--api-key KEY] [--writer-model MODEL] [--judge-model MODEL]
                       [--execution-mode sequential|parallel]
-                      [--parallel-max-iterations N] [--show-metrics] [--json]
+                      [--parallel-max-iterations N] [--max-iteration-ms MS]
+                      [--show-metrics] [--json]
 
 constitutional-ai chat [--config PATH]
                        [--execution-mode sequential|parallel]
-                       [--parallel-max-iterations N] [--show-metrics]
+                       [--parallel-max-iterations N] [--max-iteration-ms MS]
+                       [--show-metrics]
 </context_4_function>
 
 <context_4_notes>
@@ -189,6 +192,7 @@ HTTP endpoints:
 GET  /api/config
 POST /api/config
 POST /api/turn-stream
+POST /api/turn-cancel
 POST /api/turn
 </context_5_function>
 
@@ -196,6 +200,7 @@ POST /api/turn
 - `GET /api/config`: returns current config + metadata (API key source, first-run state), with API key redacted.
 - `POST /api/config`: merges and persists config updates.
 - `POST /api/turn-stream`: streams run-stage events and final result for live GUI progress updates.
+- `POST /api/turn-cancel`: requests cooperative stop of an active streamed turn.
 - `POST /api/turn`: runs one constitutional turn via `run_constitutional_turn`.
 - Additional utility endpoint exists: `POST /api/test-connection` for settings connectivity checks.
 - First run auto-creates starter config if missing and supports GUI-only setup.

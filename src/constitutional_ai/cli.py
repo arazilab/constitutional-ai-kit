@@ -40,6 +40,8 @@ def _run_once(args: argparse.Namespace) -> int:
         overrides.setdefault("settings", {})["execution_mode"] = args.execution_mode
     if args.parallel_max_iterations is not None:
         overrides.setdefault("settings", {})["parallel_max_iterations"] = args.parallel_max_iterations
+    if args.max_iteration_ms is not None:
+        overrides.setdefault("settings", {})["max_iteration_ms"] = args.max_iteration_ms
 
     merged = merge_config(config, overrides)
     user_msg = ChatMessage(role="user", content=args.prompt)
@@ -62,6 +64,8 @@ def _chat_loop(args: argparse.Namespace) -> int:
         overrides.setdefault("settings", {})["execution_mode"] = args.execution_mode
     if args.parallel_max_iterations is not None:
         overrides.setdefault("settings", {})["parallel_max_iterations"] = args.parallel_max_iterations
+    if args.max_iteration_ms is not None:
+        overrides.setdefault("settings", {})["max_iteration_ms"] = args.max_iteration_ms
     if overrides:
         config = merge_config(config, overrides)
     history: list[ChatMessage] = []
@@ -136,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Parallel mode rewrite cap (0 means run until no rules fail)",
     )
+    run_parser.add_argument(
+        "--max-iteration-ms",
+        type=int,
+        default=None,
+        help="Stop constitutional loop after this many milliseconds (0 means no limit)",
+    )
     run_parser.add_argument("--show-metrics", action="store_true", help="Print duration/token metrics")
     run_parser.add_argument("--json", action="store_true", help="Print full transcript JSON")
     run_parser.set_defaults(func=_run_once)
@@ -153,6 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Parallel mode rewrite cap (0 means run until no rules fail)",
+    )
+    chat_parser.add_argument(
+        "--max-iteration-ms",
+        type=int,
+        default=None,
+        help="Stop constitutional loop after this many milliseconds (0 means no limit)",
     )
     chat_parser.add_argument("--show-metrics", action="store_true", help="Print duration/token metrics per turn")
     chat_parser.set_defaults(func=_chat_loop)

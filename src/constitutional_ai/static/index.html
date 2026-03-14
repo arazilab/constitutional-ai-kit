@@ -235,6 +235,7 @@
               <label for="chat-input" class="small">New message</label>
               <textarea id="chat-input" placeholder="Ask a question..."></textarea>
               <div class="row" style="margin-top: 8px; justify-content: flex-end">
+                <button id="btn-stop" class="btn" disabled>Stop</button>
                 <button id="btn-send" class="btn primary">Send</button>
               </div>
             </div>
@@ -336,6 +337,14 @@
                 <label class="small" for="set-timeout-ms">Timeout (ms)</label>
                 <input id="set-timeout-ms" type="number" min="1000" step="500" />
               </div>
+            </div>
+            <div class="split">
+              <div>
+                <label class="small" for="set-max-iteration-ms">Max iteration time (ms)</label>
+                <input id="set-max-iteration-ms" type="number" min="0" step="100" />
+                <div class="small">0 means no time limit.</div>
+              </div>
+              <div></div>
             </div>
             <div class="split">
               <div>

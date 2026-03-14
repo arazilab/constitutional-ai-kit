@@ -213,16 +213,19 @@ def run_constitutional_turn(
     thread_messages: list[ChatMessage],
     config: AppConfig,
     on_event: Callable[[TurnEvent], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> TurnTranscript:
     """Run one writer/judge turn and return a full transcript object."""
     settings = config.settings
     prompts = config.prompts
     rules = [line.strip() for line in config.rules if line.strip()]
     started = time.perf_counter()
+    deadline = (started + (settings.max_iteration_ms / 1000.0)) if settings.max_iteration_ms > 0 else None
 
     thread = _collect_message_list(thread_messages)
     turn = TurnTranscript(user=user_text, thread=thread, rules=rules)
     mode = settings.execution_mode
+    stop_reason_emitted = False
 
     def add_event(
         *,
@@ -245,6 +248,30 @@ def run_constitutional_turn(
         )
         if on_event is not None:
             on_event(turn.events[-1])
+
+    def should_halt() -> bool:
+        """Return True if turn should stop due to external cancel or time budget."""
+        nonlocal stop_reason_emitted
+        if should_stop is not None and should_stop():
+            if not stop_reason_emitted:
+                add_event(stage="turn_stopped", message="Turn cancelled by user request.")
+                stop_reason_emitted = True
+            return True
+        if deadline is not None and time.perf_counter() >= deadline:
+            if not stop_reason_emitted:
+                add_event(
+                    stage="turn_timed_out",
+                    message=f"Reached max_iteration_ms={settings.max_iteration_ms}. Returning latest revision.",
+                )
+                stop_reason_emitted = True
+            return True
+        return False
+
+    if should_halt():
+        turn.final = ""
+        turn.duration_ms = int((time.perf_counter() - started) * 1000)
+        add_event(stage="turn_completed", message="Turn completed with final answer.")
+        return turn
 
     add_event(stage="initial_started", message="Generating initial writer draft.")
     initial = chat_completion(
@@ -274,6 +301,8 @@ def run_constitutional_turn(
         add_event(stage="parallel_started", message="Running in parallel mode.")
         revision_rounds = 0
         while True:
+            if should_halt():
+                break
             add_event(stage="parallel_pass_checks_started", message="Checking all rules in parallel.", iteration=revision_rounds)
             with ThreadPoolExecutor(max_workers=max(1, len(rules))) as executor:
                 pass_results = list(
@@ -333,6 +362,8 @@ def run_constitutional_turn(
                     iteration=revision_rounds,
                 )
                 break
+            if should_halt():
+                break
 
             add_event(
                 stage="parallel_critique_started",
@@ -371,6 +402,8 @@ def run_constitutional_turn(
                 check.critique_usage = critique_usage
                 turn.usage.add(critique_usage)
             add_event(stage="parallel_critique_completed", message="Parallel critique stage complete.", iteration=revision_rounds)
+            if should_halt():
+                break
 
             combined_critique = "\n\n".join(
                 [
@@ -423,9 +456,13 @@ def run_constitutional_turn(
     else:
         add_event(stage="sequential_started", message="Running in sequential mode.")
         for rule_index, rule in enumerate(rules):
+            if should_halt():
+                break
             revisions_for_rule = 0
 
             while True:
+                if should_halt():
+                    break
                 add_event(stage="sequential_check_started", message=f"Checking rule {rule_index + 1}.", rule_index=rule_index, rule=rule)
                 applies, passed, pass_raw, pass_usage = _judge_pass_for_rule(
                     api_key=settings.api_key,
@@ -509,6 +546,8 @@ def run_constitutional_turn(
                     break
 
                 revisions_for_rule += 1
+                if should_halt():
+                    break
                 add_event(
                     stage="sequential_revision_started",
                     message=f"Revising draft for rule {rule_index + 1}.",

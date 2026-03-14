@@ -104,6 +104,7 @@ Config shape:
     "max_revisions_per_rule": 1,
     "execution_mode": "sequential",
     "parallel_max_iterations": 0,
+    "max_iteration_ms": 0,
     "timeout_ms": 45000
   },
   "rules": ["..."],
@@ -133,6 +134,7 @@ TLS note:
 Transcript note:
 - Turn transcripts now include `run.events` timeline entries, including initial draft stage and sequential/parallel stage progress.
 - Turn transcripts include `duration_ms`, so GUI/CLI/Python can all inspect elapsed turn time.
+- `max_iteration_ms` can stop long runs and return the latest revision (`0` means no limit).
 
 ## Examples
 
@@ -174,6 +176,7 @@ Constraints:
 - `POST /api/config` -> merge and persist shared config
 - `POST /api/test-connection` -> validate key/base URL/model connectivity from Settings
 - `POST /api/turn-stream` -> run one turn and stream progress events (used by GUI status pill)
+- `POST /api/turn-cancel` -> request cancellation of an active streamed turn
 - `POST /api/turn` -> run one constitutional turn
 
 ## Security Notes

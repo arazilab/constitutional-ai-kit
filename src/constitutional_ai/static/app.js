@@ -13,6 +13,7 @@ const state = {
   chat: loadJson(STORAGE.chat, []),
   transcript: loadJson(STORAGE.transcript, []),
   busy: false,
+  currentTurnId: null,
 };
 
 /** Load JSON from localStorage with fallback. */
@@ -52,6 +53,8 @@ function setBusy(isBusy, label) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
+  const stop = document.getElementById("btn-stop");
+  if (stop) stop.disabled = !isBusy || !state.currentTurnId;
 }
 
 /** Convert a streamed run event into a concise status label. */
@@ -199,6 +202,7 @@ function readFormIntoState() {
     max_revisions_per_rule: Number(document.getElementById("set-max-revisions").value || 1),
     execution_mode: document.getElementById("set-execution-mode").value || "sequential",
     parallel_max_iterations: Number(document.getElementById("set-parallel-max-iterations").value || 0),
+    max_iteration_ms: Number(document.getElementById("set-max-iteration-ms").value || 0),
     timeout_ms: Number(document.getElementById("set-timeout-ms").value || 45000),
   };
   if (apiKey) {
@@ -230,6 +234,7 @@ function syncFormFromState() {
   document.getElementById("set-max-revisions").value = String(s.max_revisions_per_rule ?? 1);
   document.getElementById("set-execution-mode").value = s.execution_mode || "sequential";
   document.getElementById("set-parallel-max-iterations").value = String(s.parallel_max_iterations ?? 0);
+  document.getElementById("set-max-iteration-ms").value = String(s.max_iteration_ms ?? 0);
   document.getElementById("set-timeout-ms").value = String(s.timeout_ms ?? 45000);
   document.getElementById("rules-text").value = (state.config.rules || []).join("\n");
 
@@ -325,6 +330,7 @@ async function runTurn(userText) {
     settings: runtimeSettings,
     rules: state.config.rules,
     prompts: state.config.prompts,
+    turn_id: state.currentTurnId,
   };
 
   const res = await fetch("/api/turn-stream", {
@@ -401,6 +407,7 @@ async function onSend() {
   renderChat();
 
   try {
+    state.currentTurnId = (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) || String(Date.now());
     setBusy(true, "running constitutional loop...");
     const turn = await runTurn(text);
     state.transcript.unshift(turn);
@@ -416,6 +423,7 @@ async function onSend() {
     saveJson(STORAGE.chat, state.chat);
     renderChat();
   } finally {
+    state.currentTurnId = null;
     setBusy(false);
   }
 }
@@ -454,6 +462,19 @@ function bindEvents() {
   }
 
   document.getElementById("btn-send").addEventListener("click", onSend);
+  document.getElementById("btn-stop").addEventListener("click", async () => {
+    if (!state.currentTurnId) return;
+    setBusy(true, "stopping...");
+    try {
+      await fetch("/api/turn-cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turn_id: state.currentTurnId }),
+      });
+    } catch {
+      // Ignore network errors; loop may still end from local disconnects/timeouts.
+    }
+  });
   document.getElementById("chat-input").addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") onSend();
   });
@@ -539,6 +560,7 @@ function bindEvents() {
           max_revisions_per_rule: 1,
           execution_mode: "sequential",
           parallel_max_iterations: 0,
+          max_iteration_ms: 0,
           timeout_ms: 45000,
         },
         rules: state.config?.rules || [],
@@ -587,6 +609,7 @@ function bindEvents() {
     "set-max-revisions",
     "set-execution-mode",
     "set-parallel-max-iterations",
+    "set-max-iteration-ms",
     "set-timeout-ms",
     "prompt-writer",
     "prompt-pass",
