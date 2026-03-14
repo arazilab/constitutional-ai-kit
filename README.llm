@@ -54,6 +54,7 @@ run_constitutional_turn(
 - Parallel mode: evaluates all rules in parallel, critiques failing rules in parallel, performs one combined revision per round.
 - Returns structured transcript (`writer.drafts`, `judge.checks`, `usage`, `final`).
 - Returns run-stage telemetry in `run.events` (initial, checks, critiques, revisions, completion).
+- Includes `duration_ms` for elapsed turn runtime.
 </context_1_notes>
 
 <context_1_example>
@@ -150,16 +151,17 @@ CLI interface for single-turn and interactive use. It is a thin wrapper around s
 constitutional-ai run --prompt "<text>" [--config PATH] [--rules-file PATH]
                       [--api-key KEY] [--writer-model MODEL] [--judge-model MODEL]
                       [--execution-mode sequential|parallel]
-                      [--parallel-max-iterations N] [--json]
+                      [--parallel-max-iterations N] [--show-metrics] [--json]
 
 constitutional-ai chat [--config PATH]
                        [--execution-mode sequential|parallel]
-                       [--parallel-max-iterations N]
+                       [--parallel-max-iterations N] [--show-metrics]
 </context_4_function>
 
 <context_4_notes>
 - `run` executes one turn and prints final answer (or transcript JSON with `--json`).
 - `chat` maintains local conversation history and calls shared engine each turn.
+- `--show-metrics` prints duration and token metrics in CLI output.
 - Avoid adding interface-specific backend logic here; keep processing in engine/client.
 </context_4_notes>
 
@@ -186,12 +188,14 @@ constitutional-ai-gui [--host 127.0.0.1] [--port 8765] [--config PATH] [--no-ope
 HTTP endpoints:
 GET  /api/config
 POST /api/config
+POST /api/turn-stream
 POST /api/turn
 </context_5_function>
 
 <context_5_notes>
 - `GET /api/config`: returns current config + metadata (API key source, first-run state), with API key redacted.
 - `POST /api/config`: merges and persists config updates.
+- `POST /api/turn-stream`: streams run-stage events and final result for live GUI progress updates.
 - `POST /api/turn`: runs one constitutional turn via `run_constitutional_turn`.
 - Additional utility endpoint exists: `POST /api/test-connection` for settings connectivity checks.
 - First run auto-creates starter config if missing and supports GUI-only setup.

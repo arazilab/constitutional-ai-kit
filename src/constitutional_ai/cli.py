@@ -49,6 +49,8 @@ def _run_once(args: argparse.Namespace) -> int:
         print(json.dumps(turn.to_dict(), indent=2))
     else:
         print(turn.final)
+        if args.show_metrics:
+            print(f"\n[metrics] duration_ms={turn.duration_ms} total_tokens={turn.usage.total_tokens}")
     return 0
 
 
@@ -80,6 +82,8 @@ def _chat_loop(args: argparse.Namespace) -> int:
         history.append(ChatMessage(role="user", content=user_text))
         turn = run_constitutional_turn(user_text=user_text, thread_messages=history, config=config)
         print(f"assistant> {turn.final}")
+        if args.show_metrics:
+            print(f"[metrics] duration_ms={turn.duration_ms} total_tokens={turn.usage.total_tokens}")
         history.append(ChatMessage(role="assistant", content=turn.final))
 
     return 0
@@ -132,6 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Parallel mode rewrite cap (0 means run until no rules fail)",
     )
+    run_parser.add_argument("--show-metrics", action="store_true", help="Print duration/token metrics")
     run_parser.add_argument("--json", action="store_true", help="Print full transcript JSON")
     run_parser.set_defaults(func=_run_once)
 
@@ -149,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Parallel mode rewrite cap (0 means run until no rules fail)",
     )
+    chat_parser.add_argument("--show-metrics", action="store_true", help="Print duration/token metrics per turn")
     chat_parser.set_defaults(func=_chat_loop)
 
     config_parser = subparsers.add_parser("config", help="Manage config")

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import json
-from typing import Any
+import time
+from typing import Any, Callable
 
 from constitutional_ai.client import chat_completion
 from constitutional_ai.config import AppConfig
@@ -211,11 +212,13 @@ def run_constitutional_turn(
     user_text: str,
     thread_messages: list[ChatMessage],
     config: AppConfig,
+    on_event: Callable[[TurnEvent], None] | None = None,
 ) -> TurnTranscript:
     """Run one writer/judge turn and return a full transcript object."""
     settings = config.settings
     prompts = config.prompts
     rules = [line.strip() for line in config.rules if line.strip()]
+    started = time.perf_counter()
 
     thread = _collect_message_list(thread_messages)
     turn = TurnTranscript(user=user_text, thread=thread, rules=rules)
@@ -240,6 +243,8 @@ def run_constitutional_turn(
                 iteration=iteration,
             )
         )
+        if on_event is not None:
+            on_event(turn.events[-1])
 
     add_event(stage="initial_started", message="Generating initial writer draft.")
     initial = chat_completion(
@@ -310,7 +315,11 @@ def run_constitutional_turn(
             turn.judge_checks.extend(checks_for_round)
             add_event(
                 stage="parallel_pass_checks_completed",
-                message=f"Completed parallel pass checks. Failed rules: {len(failed_rule_indices)}.",
+                message=(
+                    "Completed parallel pass checks. Failed rules: "
+                    + (", ".join(str(i + 1) for i in failed_rule_indices) if failed_rule_indices else "none")
+                    + "."
+                ),
                 iteration=revision_rounds,
             )
 
@@ -327,7 +336,11 @@ def run_constitutional_turn(
 
             add_event(
                 stage="parallel_critique_started",
-                message=f"Generating critiques in parallel for {len(failed_rule_indices)} failing rules.",
+                message=(
+                    "Generating critiques in parallel for rules: "
+                    + ", ".join(str(i + 1) for i in failed_rule_indices)
+                    + "."
+                ),
                 iteration=revision_rounds,
             )
             with ThreadPoolExecutor(max_workers=max(1, len(failed_rule_indices))) as executor:
@@ -537,5 +550,6 @@ def run_constitutional_turn(
         add_event(stage="sequential_completed", message="Sequential loop complete.")
 
     turn.final = current
+    turn.duration_ms = int((time.perf_counter() - started) * 1000)
     add_event(stage="turn_completed", message="Turn completed with final answer.")
     return turn

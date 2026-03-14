@@ -125,6 +125,7 @@ class TurnTranscript:
     judge_checks: list[JudgeCheck] = field(default_factory=list)
     events: list[TurnEvent] = field(default_factory=list)
     usage: UsageStats = field(default_factory=UsageStats)
+    duration_ms: int = 0
     final: str = ""
 
     def to_dict(self) -> dict[str, Any]:

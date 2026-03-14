@@ -54,6 +54,14 @@ function setBusy(isBusy, label) {
   }
 }
 
+/** Convert a streamed run event into a concise status label. */
+function statusLabelFromEvent(event) {
+  if (!event || !event.stage) return "running constitutional loop...";
+  const rulePart = Number.isFinite(event.rule_index) ? ` | rule ${event.rule_index + 1}` : "";
+  const iterPart = Number.isFinite(event.iteration) ? ` | iter ${event.iteration}` : "";
+  return `${event.stage}${rulePart}${iterPart}`;
+}
+
 /** Whether a usable API key exists from current draft input or loaded config/env. */
 function hasEffectiveApiKey() {
   const typed = document.getElementById("set-api-key")?.value.trim() || "";
@@ -110,8 +118,9 @@ function renderTranscript() {
     const details = document.createElement("details");
     const failed = (turn.judge?.checks || []).filter((c) => c.applies !== false && c.pass === false).length;
     const usage = turn.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const duration = Number(turn.duration_ms || 0);
     const summary = document.createElement("summary");
-    summary.textContent = `User: ${truncate(turn.user || "", 70)} | checks: ${(turn.judge?.checks || []).length} | failed: ${failed} | total tokens: ${usage.total_tokens}`;
+    summary.textContent = `User: ${truncate(turn.user || "", 70)} | checks: ${(turn.judge?.checks || []).length} | failed: ${failed} | total tokens: ${usage.total_tokens} | duration: ${duration} ms`;
     details.appendChild(summary);
 
     const finalBlock = document.createElement("div");
@@ -310,23 +319,67 @@ async function runTurn(userText) {
   if (!runtimeSettings.api_key) {
     delete runtimeSettings.api_key;
   }
+  const payload = {
+    user_text: userText,
+    thread_messages: state.chat,
+    settings: runtimeSettings,
+    rules: state.config.rules,
+    prompts: state.config.prompts,
+  };
 
-  const res = await fetch("/api/turn", {
+  const res = await fetch("/api/turn-stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_text: userText,
-      thread_messages: state.chat,
-      settings: runtimeSettings,
-      rules: state.config.rules,
-      prompts: state.config.prompts,
-    }),
+    body: JSON.stringify(payload),
   });
-  const json = await res.json();
-  if (!res.ok || !json.ok) {
-    throw new Error(json.error || "Turn failed.");
+  if (!res.ok || !res.body) {
+    // Fallback to non-stream endpoint if streaming is unavailable.
+    const fallback = await fetch("/api/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const fallbackJson = await fallback.json();
+    if (!fallback.ok || !fallbackJson.ok) {
+      throw new Error(fallbackJson.error || "Turn failed.");
+    }
+    return fallbackJson.turn;
   }
-  return json.turn;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalTurn = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let packet = null;
+      try {
+        packet = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (packet.type === "event") {
+        setBusy(true, statusLabelFromEvent(packet.event));
+      } else if (packet.type === "turn") {
+        finalTurn = packet.turn;
+      } else if (packet.type === "error") {
+        throw new Error(packet.error || "Turn failed.");
+      }
+    }
+  }
+
+  if (!finalTurn) {
+    throw new Error("Turn failed: no final result returned.");
+  }
+  return finalTurn;
 }
 
 /** Send message handler. */

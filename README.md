@@ -34,6 +34,7 @@ Single turn:
 ```bash
 constitutional-ai run --prompt "What is constitutional AI?"
 constitutional-ai run --prompt "What is constitutional AI?" --execution-mode parallel --parallel-max-iterations 1
+constitutional-ai run --prompt "What is constitutional AI?" --show-metrics
 ```
 
 Interactive chat:
@@ -41,6 +42,7 @@ Interactive chat:
 ```bash
 constitutional-ai chat
 constitutional-ai chat --execution-mode sequential
+constitutional-ai chat --show-metrics
 ```
 
 ### 3. Run GUI
@@ -130,6 +132,7 @@ TLS note:
 
 Transcript note:
 - Turn transcripts now include `run.events` timeline entries, including initial draft stage and sequential/parallel stage progress.
+- Turn transcripts include `duration_ms`, so GUI/CLI/Python can all inspect elapsed turn time.
 
 ## Examples
 
@@ -170,6 +173,7 @@ Constraints:
 - `GET /api/config` -> current shared config
 - `POST /api/config` -> merge and persist shared config
 - `POST /api/test-connection` -> validate key/base URL/model connectivity from Settings
+- `POST /api/turn-stream` -> run one turn and stream progress events (used by GUI status pill)
 - `POST /api/turn` -> run one constitutional turn
 
 ## Security Notes
