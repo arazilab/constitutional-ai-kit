@@ -7,6 +7,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 
 DEFAULT_CONFIG_DIR = Path.home() / ".constitutional_ai"
@@ -18,6 +19,29 @@ DEFAULT_RULES = [
     "If uncertain, state uncertainty and ask clarifying questions.",
     "Keep responses concise unless the user asks for depth.",
 ]
+
+
+def normalize_base_url(value: str) -> str:
+    """Normalize API base URL and reject malformed values."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Invalid base_url: value is empty.")
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Invalid base_url: must start with http:// or https://.")
+    if not parsed.netloc:
+        raise ValueError("Invalid base_url: missing hostname.")
+
+    path = parsed.path.rstrip("/")
+    # Accept either root base URLs or values ending in /v1 and normalize both.
+    while path.endswith("/v1"):
+        path = path[: -len("/v1")]
+        path = path.rstrip("/")
+    if "/v1/" in path:
+        raise ValueError("Invalid base_url: '/v1' may only appear at the end of the path.")
+
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
 
 
 @dataclass(slots=True)
@@ -45,7 +69,7 @@ class RuntimeSettings:
 
         return RuntimeSettings(
             api_key=str(value.get("api_key", "") or ""),
-            base_url=str(value.get("base_url", "https://api.openai.com") or "https://api.openai.com"),
+            base_url=normalize_base_url(str(value.get("base_url", "https://api.openai.com") or "https://api.openai.com")),
             writer_model=str(value.get("writer_model", "gpt-4o-mini") or "gpt-4o-mini"),
             judge_model=str(value.get("judge_model", "gpt-4o-mini") or "gpt-4o-mini"),
             temperature=float(value.get("temperature", 0.4) or 0.4),
@@ -126,6 +150,20 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def get_api_key_source(path: str | Path | None = None) -> str:
+    """Return where the effective API key comes from: env, config, or none."""
+    env_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if env_key:
+        return "environment"
+
+    cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
+    payload = _read_json(cfg_path)
+    stored = ""
+    if isinstance(payload.get("settings"), dict):
+        stored = str(payload["settings"].get("api_key", "") or "").strip()
+    return "config" if stored else "none"
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

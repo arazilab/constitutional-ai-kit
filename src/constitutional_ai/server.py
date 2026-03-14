@@ -12,7 +12,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, load_config, merge_config, save_config
+from constitutional_ai.client import OpenAIAPIError, chat_completion
+from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, get_api_key_source, load_config, merge_config, save_config
 from constitutional_ai.engine import run_constitutional_turn
 from constitutional_ai.utils import normalize_chat_history
 
@@ -33,8 +34,16 @@ class AppState:
     def __init__(self, config_path: Path) -> None:
         """Initialize with a config file path and load current state."""
         self.config_path = config_path
+        self.config_created = not config_path.exists()
+        self.load_error = ""
         self._lock = threading.Lock()
-        self.config = load_config(config_path)
+        if self.config_created:
+            save_config(AppConfig(), config_path)
+        try:
+            self.config = load_config(config_path)
+        except Exception as exc:  # noqa: BLE001
+            self.load_error = str(exc)
+            self.config = AppConfig()
 
     def get_config(self) -> AppConfig:
         """Return a deep-copied config snapshot."""
@@ -47,6 +56,40 @@ class AppState:
             self.config = merge_config(self.config, payload)
             save_config(self.config, self.config_path)
             return AppConfig.from_mapping(self.config.to_dict())
+
+    def metadata(self) -> dict[str, Any]:
+        """Return UI metadata about config and API key source."""
+        with self._lock:
+            key_source = get_api_key_source(self.config_path)
+            persisted_payload = self.config.to_dict()
+            effective_has_key = bool(str(persisted_payload["settings"].get("api_key", "")).strip())
+            return {
+                "config_path": str(self.config_path),
+                "config_created": self.config_created,
+                "api_key_source": key_source,
+                "api_key_present": effective_has_key,
+                "load_error": self.load_error,
+            }
+
+
+def _sanitize_settings_payload(settings: Any) -> dict[str, Any] | None:
+    """Return settings overrides while preserving existing API key on blank input."""
+    if not isinstance(settings, dict):
+        return None
+    cleaned = dict(settings)
+    incoming_key = str(cleaned.get("api_key", "") or "").strip()
+    if incoming_key:
+        cleaned["api_key"] = incoming_key
+    else:
+        cleaned.pop("api_key", None)
+    return cleaned
+
+
+def _redacted_config_dict(config: AppConfig) -> dict[str, Any]:
+    """Return config dictionary suitable for GUI responses without exposing API key."""
+    payload = config.to_dict()
+    payload["settings"]["api_key"] = ""
+    return payload
 
 
 class ConstitutionalHandler(BaseHTTPRequestHandler):
@@ -63,8 +106,8 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             self._serve_static("app.js", "application/javascript; charset=utf-8")
             return
         if self.path == "/api/config":
-            config = self.server.state.get_config().to_dict()
-            _json_response(self, HTTPStatus.OK, {"ok": True, "config": config})
+            config = _redacted_config_dict(self.server.state.get_config())
+            _json_response(self, HTTPStatus.OK, {"ok": True, "config": config, "meta": self.server.state.metadata()})
             return
 
         _json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found"})
@@ -80,8 +123,18 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/config":
-            updated = self.server.state.set_config(payload).to_dict()
-            _json_response(self, HTTPStatus.OK, {"ok": True, "config": updated})
+            to_save = dict(payload)
+            to_save["settings"] = _sanitize_settings_payload(payload.get("settings"))
+            try:
+                updated = _redacted_config_dict(self.server.state.set_config(to_save))
+            except Exception as exc:  # noqa: BLE001
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+            _json_response(self, HTTPStatus.OK, {"ok": True, "config": updated, "meta": self.server.state.metadata()})
+            return
+
+        if self.path == "/api/test-connection":
+            self._handle_test_connection(payload)
             return
 
         _json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found"})
@@ -131,8 +184,9 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
         config = self.server.state.get_config()
 
         # Allow per-request overrides without mutating persisted server config.
+        settings_payload = _sanitize_settings_payload(payload.get("settings"))
         override_payload = {
-            "settings": payload.get("settings"),
+            "settings": settings_payload,
             "rules": payload.get("rules"),
             "rules_text": payload.get("rules_text"),
             "prompts": payload.get("prompts"),
@@ -150,6 +204,52 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             return
 
         _json_response(self, HTTPStatus.OK, {"ok": True, "turn": turn.to_dict()})
+
+    def _handle_test_connection(self, payload: dict[str, Any]) -> None:
+        """Run a lightweight OpenAI connectivity check with current/override settings."""
+        base = self.server.state.get_config()
+        override_payload = {"settings": _sanitize_settings_payload(payload.get("settings"))}
+        runtime = merge_config(base, override_payload)
+        settings = runtime.settings
+
+        if not settings.api_key.strip():
+            _json_response(
+                self,
+                HTTPStatus.BAD_REQUEST,
+                {"ok": False, "error": "Missing API key. Enter one in Settings or set OPENAI_API_KEY."},
+            )
+            return
+
+        try:
+            result = chat_completion(
+                api_key=settings.api_key,
+                base_url=settings.base_url,
+                model=settings.writer_model,
+                messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+                temperature=0.0,
+                max_tokens=8,
+                timeout_ms=settings.timeout_ms,
+            )
+        except OpenAIAPIError as exc:
+            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001
+            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Connection test failed: {exc}"})
+            return
+
+        _json_response(
+            self,
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "result": {
+                    "message": "Connection successful.",
+                    "base_url": settings.base_url,
+                    "model": settings.writer_model,
+                    "response_preview": result.content[:120],
+                },
+            },
+        )
 
 
 class ConstitutionalHTTPServer(ThreadingHTTPServer):

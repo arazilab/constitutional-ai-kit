@@ -6,6 +6,8 @@ A Python package for constitutional AI with one shared engine across:
 - Local HTML GUI
 - Python scripts and notebooks
 
+This repo also includes `README.llm`, a structured machine-oriented companion doc for LLMs/coding agents.
+
 ## Install
 
 From the repository root:
@@ -48,6 +50,8 @@ constitutional-ai-gui
 
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
 
+On first run, the GUI auto-creates a starter config file and opens Settings if required setup (like API key) is missing.
+
 ## Use in Your Own Python Script
 
 After cloning and installing this repo, any Python script can import the package:
@@ -71,7 +75,7 @@ Default path:
 
 - `~/.constitutional_ai/config.json`
 
-Create starter config:
+Create starter config (optional, GUI auto-creates it if missing):
 
 ```bash
 constitutional-ai config init
@@ -110,6 +114,16 @@ Config shape:
 
 The GUI reads and writes this same config via `/api/config`.
 
+`base_url` is normalized and validated (supports both `https://api.openai.com` and `https://api.openai.com/v1` as input).
+
+For request-path debugging, set:
+
+```bash
+export CONSTITUTIONAL_AI_DEBUG=1
+```
+
+This logs final request URLs without exposing API keys.
+
 ## Examples
 
 See the [examples](./examples) folder for scenario-based examples with separate READMEs:
@@ -117,13 +131,38 @@ See the [examples](./examples) folder for scenario-based examples with separate 
 - different model choices
 - multi-turn history handling
 - different constitutions for different tasks
+- parallel judge/critic execution mode with iteration cap controls
 - single-turn minimal script usage
+
+## LLM-Oriented Docs
+
+- `README.llm` is a structured guide for coding agents (rules, signatures, examples).
+- Keep `README.md` and `README.llm` updated together after each code edit so both reflect the latest behavior.
+- Core invariant for contributors and agents: one shared backend core, multiple interfaces (CLI/GUI/scripts), no split backends.
+
+### Prompt Example For LLMs
+
+You can paste this template into an LLM prompt when requesting repo changes:
+
+```text
+Read /Users/mn864/Documents/git/constitutional-ai-kit/README.llm and follow it strictly.
+
+Task:
+<describe the change>
+
+Constraints:
+1) Keep one shared backend core (`src/constitutional_ai/engine.py` + shared config/client layers).
+2) Do not implement separate constitutional-processing logic for CLI vs GUI vs scripts.
+3) If behavior changes, update both README.md and README.llm.
+4) Reuse existing public APIs and provide minimal validation steps.
+```
 
 ## Local API Endpoints (GUI server)
 
 - `GET /` -> GUI
 - `GET /api/config` -> current shared config
 - `POST /api/config` -> merge and persist shared config
+- `POST /api/test-connection` -> validate key/base URL/model connectivity from Settings
 - `POST /api/turn` -> run one constitutional turn
 
 ## Security Notes

@@ -1,0 +1,276 @@
+Rules:
+Rule 1: Preserve one shared backend. All behavior changes must be implemented in shared core modules, then surfaced through interfaces (CLI, GUI, scripts/notebooks).
+Rule 2: Do not create separate logic paths per interface for constitutional processing. CLI, GUI, and scripts must all call `run_constitutional_turn`.
+Rule 3: Reuse library functions and datamodels instead of reimplementing request, config, or transcript behavior.
+Rule 4: When uncertain about behavior, inspect current signatures and ask for clarification before inventing APIs.
+Rule 5: Respect runtime configuration (`RuntimeSettings`, prompts, rules) and avoid hardcoding values in generated code.
+Rule 6: Prefer minimal working examples that import from `constitutional_ai.*`.
+Rule 7: Do not expose API keys in logs, responses, or generated examples.
+Rule 8: Keep `README.md` and `README.llm` aligned when adding engine features, CLI commands, or server endpoints.
+Rule 9: After each code edit, update `README.md` and `README.llm` to reflect the latest repository behavior.
+Rule 10: All code must include documentation: module/function/class docstrings, plus concise comments for non-obvious logic.
+
+<ReadMe.LLM>
+
+<library_description>
+This repository provides a Constitutional AI package with one shared engine and multiple interfaces.
+
+Purpose:
+- run writer/judge constitutional loops over user prompts
+- support sequential and parallel rule-evaluation modes
+- expose the same core behavior through CLI, GUI server, and Python imports
+
+Main components:
+- `constitutional_ai.engine`: core constitutional loop (`run_constitutional_turn`)
+- `constitutional_ai.config`: load/merge/save config and runtime settings
+- `constitutional_ai.client`: shared OpenAI chat-completions request layer
+- `constitutional_ai.models`: typed dataclasses for messages and transcripts
+- `constitutional_ai.cli`: command-line interface
+- `constitutional_ai.server`: GUI + HTTP API wrapper around shared engine
+
+Key architecture constraint:
+- there is one backend core. Interfaces must only adapt input/output and call shared modules.
+</library_description>
+
+<context_1>
+<context_1_description>
+Core engine entrypoint for one constitutional reasoning turn.
+All interfaces should call this function rather than duplicating logic.
+</context_1_description>
+
+<context_1_function>
+run_constitutional_turn(
+    *,
+    user_text: str,
+    thread_messages: list[ChatMessage],
+    config: AppConfig
+) -> TurnTranscript
+</context_1_function>
+
+<context_1_notes>
+- Generates an initial writer draft.
+- Evaluates rules via judge.
+- Sequential mode: evaluates rules one-by-one with per-rule revisions.
+- Parallel mode: evaluates all rules in parallel, critiques failing rules in parallel, performs one combined revision per round.
+- Returns structured transcript (`writer.drafts`, `judge.checks`, `usage`, `final`).
+</context_1_notes>
+
+<context_1_example>
+from constitutional_ai.config import load_config
+from constitutional_ai.engine import run_constitutional_turn
+from constitutional_ai.models import ChatMessage
+
+config = load_config()
+thread = [ChatMessage(role="user", content="Explain constitutional AI in 3 bullets.")]
+
+turn = run_constitutional_turn(
+    user_text=thread[-1].content,
+    thread_messages=thread,
+    config=config,
+)
+
+print(turn.final)
+</context_1_example>
+</context_1>
+
+<context_2>
+<context_2_description>
+Configuration loading and persistence. Used by CLI, GUI server, and scripts.
+</context_2_description>
+
+<context_2_function>
+load_config(path: str | Path | None = None) -> AppConfig
+</context_2_function>
+
+<context_2_related_functions>
+save_config(config: AppConfig, path: str | Path | None = None) -> Path
+merge_config(base: AppConfig, payload: dict[str, Any] | None) -> AppConfig
+normalize_base_url(value: str) -> str
+</context_2_related_functions>
+
+<context_2_notes>
+- Config default path: `~/.constitutional_ai/config.json`.
+- `OPENAI_API_KEY` environment variable overrides stored API key at load time.
+- `base_url` is normalized/validated to prevent malformed OpenAI endpoint construction.
+- Runtime settings include execution mode and parallel iteration limit.
+</context_2_notes>
+
+<context_2_example>
+from constitutional_ai.config import load_config, merge_config
+
+base = load_config()
+cfg = merge_config(
+    base,
+    {
+        "settings": {
+            "execution_mode": "parallel",
+            "parallel_max_iterations": 1,
+        }
+    },
+)
+</context_2_example>
+</context_2>
+
+<context_3>
+<context_3_description>
+Primary message model used for thread history.
+</context_3_description>
+
+<context_3_function>
+ChatMessage(
+    role: Literal["user", "assistant"],
+    content: str,
+    at: str = now_iso()
+)
+</context_3_function>
+
+<context_3_notes>
+- Use `ChatMessage` for thread inputs to `run_constitutional_turn`.
+- Convert to OpenAI message format via `to_openai()` internally.
+- Validate untrusted mappings with `ChatMessage.from_mapping`.
+</context_3_notes>
+
+<context_3_example>
+from constitutional_ai.models import ChatMessage
+
+history = [
+    ChatMessage(role="user", content="Hello"),
+    ChatMessage(role="assistant", content="Hi, how can I help?"),
+]
+</context_3_example>
+</context_3>
+
+<context_4>
+<context_4_description>
+CLI interface for single-turn and interactive use. It is a thin wrapper around shared config + shared engine.
+</context_4_description>
+
+<context_4_function>
+constitutional-ai run --prompt "<text>" [--config PATH] [--rules-file PATH]
+                      [--api-key KEY] [--writer-model MODEL] [--judge-model MODEL]
+                      [--execution-mode sequential|parallel]
+                      [--parallel-max-iterations N] [--json]
+
+constitutional-ai chat [--config PATH]
+                       [--execution-mode sequential|parallel]
+                       [--parallel-max-iterations N]
+</context_4_function>
+
+<context_4_notes>
+- `run` executes one turn and prints final answer (or transcript JSON with `--json`).
+- `chat` maintains local conversation history and calls shared engine each turn.
+- Avoid adding interface-specific backend logic here; keep processing in engine/client.
+</context_4_notes>
+
+<context_4_example>
+# Single turn
+constitutional-ai run --prompt "Summarize constitutional AI"
+
+# Parallel mode with one rewrite round
+constitutional-ai run --prompt "Draft policy guidance" \
+  --execution-mode parallel \
+  --parallel-max-iterations 1
+</context_4_example>
+</context_4>
+
+<context_5>
+<context_5_description>
+GUI server and HTTP endpoints. The server exposes static GUI assets and API routes, but still uses the same core engine.
+</context_5_description>
+
+<context_5_function>
+Server entrypoint:
+constitutional-ai-gui [--host 127.0.0.1] [--port 8765] [--config PATH] [--no-open]
+
+HTTP endpoints:
+GET  /api/config
+POST /api/config
+POST /api/turn
+</context_5_function>
+
+<context_5_notes>
+- `GET /api/config`: returns current config + metadata (API key source, first-run state), with API key redacted.
+- `POST /api/config`: merges and persists config updates.
+- `POST /api/turn`: runs one constitutional turn via `run_constitutional_turn`.
+- Additional utility endpoint exists: `POST /api/test-connection` for settings connectivity checks.
+- First run auto-creates starter config if missing and supports GUI-only setup.
+</context_5_notes>
+
+<context_5_example>
+curl -s http://127.0.0.1:8765/api/config
+
+curl -s -X POST http://127.0.0.1:8765/api/turn \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_text": "Explain constitutional AI",
+    "thread_messages": [{"role":"user","content":"Explain constitutional AI"}]
+  }'
+</context_5_example>
+</context_5>
+
+<context_6>
+<context_6_description>
+Shared request client to OpenAI chat-completions. This is the only request builder used by engine and server checks.
+</context_6_description>
+
+<context_6_function>
+chat_completion(
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+    timeout_ms: int
+) -> CompletionResult
+</context_6_function>
+
+<context_6_notes>
+- Final endpoint URL is built centrally from normalized base URL.
+- Debug URL logging can be enabled with `CONSTITUTIONAL_AI_DEBUG=1`.
+- Never log API keys.
+</context_6_notes>
+
+<context_6_example>
+from constitutional_ai.client import chat_completion
+
+res = chat_completion(
+    api_key="...",
+    base_url="https://api.openai.com",
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Reply with OK"}],
+    temperature=0.0,
+    max_tokens=8,
+    timeout_ms=45000,
+)
+print(res.content)
+</context_6_example>
+</context_6>
+
+<maintenance_policy>
+When adding or changing any of the following, update BOTH `README.md` and `README.llm` in the same change:
+- engine behavior or signatures
+- config fields/defaults/validation
+- CLI commands/options
+- GUI server endpoints or first-run flow
+- data models used in public examples
+
+Documentation standard for all ongoing changes:
+- Include module docstrings in Python files.
+- Include function/class docstrings in Python.
+- Include concise inline comments where logic is non-trivial.
+- Keep JavaScript function-level doc comments up to date.
+</maintenance_policy>
+
+<agent_prompt_template>
+Use this template when prompting an LLM/coding agent to modify this repo:
+
+1) Read and follow `README.llm`.
+2) Preserve one backend core (`engine.py` + shared client/config); do not fork logic across CLI/GUI/scripts.
+3) Implement requested changes in shared modules first, then wire interfaces.
+4) Update `README.md` and `README.llm` if public behavior changes.
+5) Provide validation steps and list affected files.
+</agent_prompt_template>
+
+</ReadMe.LLM>

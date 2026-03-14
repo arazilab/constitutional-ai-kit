@@ -9,6 +9,7 @@ const STORAGE = {
 /** In-memory application state. */
 const state = {
   config: null,
+  meta: null,
   chat: loadJson(STORAGE.chat, []),
   transcript: loadJson(STORAGE.transcript, []),
   busy: false,
@@ -47,10 +48,16 @@ function setBusy(isBusy, label) {
   pill.classList.toggle("ok", !isBusy);
   pill.classList.toggle("bad", isBusy);
 
-  for (const id of ["btn-send", "btn-save-config", "btn-save-rules", "btn-save-settings"]) {
+  for (const id of ["btn-send", "btn-save-config", "btn-save-rules", "btn-save-settings", "btn-test-connection"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
+}
+
+/** Whether a usable API key exists from current draft input or loaded config/env. */
+function hasEffectiveApiKey() {
+  const typed = document.getElementById("set-api-key")?.value.trim() || "";
+  return Boolean(typed || state.meta?.api_key_present);
 }
 
 /** Normalize chat list to user/assistant messages only. */
@@ -148,8 +155,8 @@ function renderTranscript() {
 /** Read config form controls into state.config. */
 function readFormIntoState() {
   if (!state.config) return;
+  const apiKey = document.getElementById("set-api-key").value.trim();
   state.config.settings = {
-    api_key: document.getElementById("set-api-key").value.trim(),
     base_url: document.getElementById("set-base-url").value.trim(),
     writer_model: document.getElementById("set-writer-model").value.trim(),
     judge_model: document.getElementById("set-judge-model").value.trim(),
@@ -160,6 +167,9 @@ function readFormIntoState() {
     parallel_max_iterations: Number(document.getElementById("set-parallel-max-iterations").value || 0),
     timeout_ms: Number(document.getElementById("set-timeout-ms").value || 45000),
   };
+  if (apiKey) {
+    state.config.settings.api_key = apiKey;
+  }
   state.config.prompts = {
     writer_system: document.getElementById("prompt-writer").value,
     judge_pass_system: document.getElementById("prompt-pass").value,
@@ -178,7 +188,6 @@ function syncFormFromState() {
   const s = state.config.settings;
   const p = state.config.prompts;
 
-  document.getElementById("set-api-key").value = s.api_key || "";
   document.getElementById("set-base-url").value = s.base_url || "";
   document.getElementById("set-writer-model").value = s.writer_model || "";
   document.getElementById("set-judge-model").value = s.judge_model || "";
@@ -195,11 +204,29 @@ function syncFormFromState() {
   document.getElementById("prompt-critique").value = p.judge_critique_system || "";
 
   document.getElementById("pill-rules").textContent = `rules: ${(state.config.rules || []).length}`;
-  const keySet = Boolean((s.api_key || "").trim());
+  const keySet = hasEffectiveApiKey();
   const keyPill = document.getElementById("pill-key");
   keyPill.textContent = `api key: ${keySet ? "set" : "missing"}`;
   keyPill.classList.toggle("ok", keySet);
   keyPill.classList.toggle("bad", !keySet);
+
+  const source = state.meta?.api_key_source || "none";
+  const sourceNode = document.getElementById("api-key-source");
+  sourceNode.textContent =
+    source === "environment"
+      ? "Key source: OPENAI_API_KEY environment variable (takes precedence over saved key)."
+      : source === "config"
+        ? "Key source: local config file."
+        : "Key source: not set.";
+
+  const setupBanner = document.getElementById("setup-banner");
+  setupBanner.hidden = keySet;
+  if (state.meta?.load_error) {
+    setupBanner.hidden = false;
+    setupBanner.textContent = `Config load warning: ${state.meta.load_error}`;
+  } else if (!keySet) {
+    setupBanner.textContent = "Setup required: add an API key, save settings, then start chatting.";
+  }
 }
 
 /** GET /api/config. */
@@ -210,6 +237,8 @@ async function fetchConfig() {
     throw new Error(json.error || "Failed to load config.");
   }
   state.config = json.config;
+  state.meta = json.meta || null;
+  document.getElementById("set-api-key").value = "";
   syncFormFromState();
 }
 
@@ -227,13 +256,35 @@ async function saveConfigToServer() {
     throw new Error(json.error || "Failed to save config.");
   }
   state.config = json.config;
+  state.meta = json.meta || null;
+  document.getElementById("set-api-key").value = "";
   syncFormFromState();
+}
+
+/** POST /api/test-connection and return result payload. */
+async function testConnection() {
+  if (!state.config) throw new Error("Config not loaded.");
+  readFormIntoState();
+  const res = await fetch("/api/test-connection", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings: state.config.settings }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || "Connection test failed.");
+  }
+  return json.result;
 }
 
 /** POST /api/turn and return turn payload. */
 async function runTurn(userText) {
   if (!state.config) throw new Error("Config not loaded.");
   readFormIntoState();
+  const runtimeSettings = { ...state.config.settings };
+  if (!runtimeSettings.api_key) {
+    delete runtimeSettings.api_key;
+  }
 
   const res = await fetch("/api/turn", {
     method: "POST",
@@ -241,7 +292,7 @@ async function runTurn(userText) {
     body: JSON.stringify({
       user_text: userText,
       thread_messages: state.chat,
-      settings: state.config.settings,
+      settings: runtimeSettings,
       rules: state.config.rules,
       prompts: state.config.prompts,
     }),
@@ -256,6 +307,11 @@ async function runTurn(userText) {
 /** Send message handler. */
 async function onSend() {
   if (state.busy) return;
+  if (!hasEffectiveApiKey()) {
+    setPage("settings");
+    alert("Missing API key. Add it in Settings, save, then retry.");
+    return;
+  }
   const box = document.getElementById("chat-input");
   const text = box.value.trim();
   if (!text) return;
@@ -366,11 +422,37 @@ function bindEvents() {
     }
   });
 
+  document.getElementById("btn-test-connection").addEventListener("click", async () => {
+    const resultNode = document.getElementById("test-connection-result");
+    resultNode.textContent = "Testing connection...";
+    try {
+      setBusy(true, "testing connection...");
+      const result = await testConnection();
+      resultNode.textContent = `${result.message} model=${result.model} base_url=${result.base_url}`;
+      resultNode.classList.add("ok");
+      resultNode.classList.remove("bad");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      resultNode.textContent = `Connection test failed: ${message}`;
+      resultNode.classList.add("bad");
+      resultNode.classList.remove("ok");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  document.getElementById("btn-toggle-api-key").addEventListener("click", () => {
+    const keyInput = document.getElementById("set-api-key");
+    const btn = document.getElementById("btn-toggle-api-key");
+    const reveal = keyInput.type === "password";
+    keyInput.type = reveal ? "text" : "password";
+    btn.textContent = reveal ? "Hide" : "Reveal";
+  });
+
   document.getElementById("btn-reset-settings").addEventListener("click", async () => {
     try {
       state.config = {
         settings: {
-          api_key: "",
           base_url: "https://api.openai.com",
           writer_model: "gpt-4o-mini",
           judge_model: "gpt-4o-mini",
@@ -391,6 +473,7 @@ function bindEvents() {
             "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. The answer already failed the rule. Provide critique and concrete required fixes. Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}.",
         },
       };
+      document.getElementById("set-api-key").value = "";
       syncFormFromState();
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error));
@@ -418,7 +501,6 @@ function bindEvents() {
   });
 
   for (const id of [
-    "set-api-key",
     "set-base-url",
     "set-writer-model",
     "set-judge-model",
@@ -438,6 +520,10 @@ function bindEvents() {
       syncFormFromState();
     });
   }
+
+  document.getElementById("set-api-key").addEventListener("input", () => {
+    syncFormFromState();
+  });
 }
 
 /** App bootstrap. */
@@ -451,6 +537,9 @@ async function init() {
   setBusy(true, "loading config...");
   try {
     await fetchConfig();
+    if (!hasEffectiveApiKey()) {
+      setPage("settings");
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     alert(`Could not load config from server: ${message}`);

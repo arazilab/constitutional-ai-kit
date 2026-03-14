@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from constitutional_ai.config import normalize_base_url
 from constitutional_ai.models import UsageStats
 
 
@@ -24,6 +27,17 @@ class OpenAIAPIError(RuntimeError):
     """Raised when the OpenAI-compatible API call fails."""
 
 
+def _debug_enabled() -> bool:
+    """Return True when debug logging is enabled by environment."""
+    return os.getenv("CONSTITUTIONAL_AI_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_chat_completions_url(base_url: str) -> str:
+    """Build the canonical chat-completions endpoint URL from normalized base URL."""
+    normalized = normalize_base_url(base_url)
+    return f"{normalized}/v1/chat/completions"
+
+
 def chat_completion(
     *,
     api_key: str,
@@ -38,7 +52,14 @@ def chat_completion(
     if not api_key:
         raise OpenAIAPIError("Missing API key. Set OPENAI_API_KEY or save it in config.")
 
-    url = f"{base_url.rstrip('/')}/v1/chat/completions"
+    try:
+        url = _build_chat_completions_url(base_url)
+    except ValueError as exc:
+        raise OpenAIAPIError(str(exc)) from exc
+
+    if _debug_enabled():
+        print(f"[constitutional_ai.debug] POST {url} model={model}", file=sys.stderr)
+
     payload = {
         "model": model,
         "messages": messages,
@@ -66,6 +87,8 @@ def chat_completion(
             message = parsed.get("error", {}).get("message") or raw
         except json.JSONDecodeError:
             message = raw or f"HTTP {exc.code}"
+        if exc.code == 404:
+            message = f"{message} (request URL: {url})"
         raise OpenAIAPIError(f"OpenAI API error ({exc.code}): {message}") from exc
     except URLError as exc:
         raise OpenAIAPIError(f"Network error while calling API: {exc}") from exc

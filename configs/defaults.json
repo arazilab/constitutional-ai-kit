@@ -1,6 +1,6 @@
 {
   "settings": {
-    "api_key": "",
+    "api_key": "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",
     "base_url": "https://api.openai.com",
     "writer_model": "gpt-4o-mini",
     "judge_model": "gpt-4o-mini",
