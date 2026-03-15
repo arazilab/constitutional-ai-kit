@@ -10,6 +10,7 @@ const STORAGE = {
 const state = {
   config: null,
   meta: null,
+  models: [],
   chat: loadJson(STORAGE.chat, []),
   transcript: loadJson(STORAGE.transcript, []),
   busy: false,
@@ -49,7 +50,7 @@ function setBusy(isBusy, label) {
   pill.classList.toggle("ok", !isBusy);
   pill.classList.toggle("bad", isBusy);
 
-  for (const id of ["btn-send", "btn-save-config", "btn-save-rules", "btn-save-settings", "btn-test-connection"]) {
+  for (const id of ["btn-send", "btn-save-config", "btn-save-rules", "btn-save-settings", "btn-test-connection", "btn-refresh-models"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
@@ -215,6 +216,36 @@ function renderTranscript() {
   }
 }
 
+/** Populate writer/judge model dropdowns from state.models while preserving selected values. */
+function syncModelOptions() {
+  const writer = document.getElementById("set-writer-model");
+  const judge = document.getElementById("set-judge-model");
+  if (!writer || !judge || !state.config) return;
+  const selectedWriter = state.config.settings?.writer_model || "";
+  const selectedJudge = state.config.settings?.judge_model || "";
+  const ids = state.models.map((m) => String(m.id || "")).filter((id) => id.length > 0);
+  const pool = new Set(ids);
+  if (selectedWriter) pool.add(selectedWriter);
+  if (selectedJudge) pool.add(selectedJudge);
+  const options = Array.from(pool).sort();
+
+  writer.innerHTML = "";
+  judge.innerHTML = "";
+  for (const id of options) {
+    const w = document.createElement("option");
+    w.value = id;
+    w.textContent = id;
+    writer.appendChild(w);
+
+    const j = document.createElement("option");
+    j.value = id;
+    j.textContent = id;
+    judge.appendChild(j);
+  }
+  if (selectedWriter) writer.value = selectedWriter;
+  if (selectedJudge) judge.value = selectedJudge;
+}
+
 /** Read config form controls into state.config. */
 function readFormIntoState() {
   if (!state.config) return;
@@ -253,6 +284,7 @@ function syncFormFromState() {
   const p = state.config.prompts;
 
   document.getElementById("set-base-url").value = s.base_url || "";
+  syncModelOptions();
   document.getElementById("set-writer-model").value = s.writer_model || "";
   document.getElementById("set-judge-model").value = s.judge_model || "";
   document.getElementById("set-temperature").value = String(s.temperature ?? 0.4);
@@ -324,6 +356,23 @@ async function saveConfigToServer() {
   state.meta = json.meta || null;
   document.getElementById("set-api-key").value = "";
   syncFormFromState();
+}
+
+/** POST /api/models and cache available model IDs in state.models. */
+async function fetchModels() {
+  if (!state.config) return;
+  readFormIntoState();
+  const res = await fetch("/api/models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings: state.config.settings }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || "Failed to load model list.");
+  }
+  state.models = Array.isArray(json.models) ? json.models : [];
+  syncModelOptions();
 }
 
 /** POST /api/test-connection and return result payload. */
@@ -541,7 +590,16 @@ function bindEvents() {
   document.getElementById("btn-save-settings").addEventListener("click", async () => {
     try {
       await saveConfigToServer();
+      await fetchModels();
       setPage("chat");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  document.getElementById("btn-refresh-models").addEventListener("click", async () => {
+    try {
+      await fetchModels();
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error));
     }
@@ -673,6 +731,11 @@ async function init() {
   setBusy(true, "loading config...");
   try {
     await fetchConfig();
+    try {
+      await fetchModels();
+    } catch {
+      // Leave current configured values if model listing fails.
+    }
     if (!hasEffectiveApiKey()) {
       setPage("settings");
     }

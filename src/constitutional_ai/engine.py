@@ -7,7 +7,7 @@ import json
 import time
 from typing import Any, Callable
 
-from constitutional_ai.client import chat_completion
+from constitutional_ai.client import OpenAIAPIError, chat_completion, list_models
 from constitutional_ai.config import AppConfig
 from constitutional_ai.models import ChatMessage, JudgeCheck, TurnEvent, TurnTranscript, UsageStats, WriterDraft, now_iso
 
@@ -221,6 +221,17 @@ def run_constitutional_turn(
     rules = [line.strip() for line in config.rules if line.strip()]
     started = time.perf_counter()
     deadline = (started + (settings.max_iteration_ms / 1000.0)) if settings.max_iteration_ms > 0 else None
+
+    models = list_models(api_key=settings.api_key, base_url=settings.base_url, timeout_ms=settings.timeout_ms)
+    model_ids = {str(model.get("id", "")) for model in models}
+    missing_models = [name for name in {settings.writer_model, settings.judge_model} if name not in model_ids]
+    if missing_models:
+        available = ", ".join(sorted(model_ids)) if model_ids else "(no models returned)"
+        raise OpenAIAPIError(
+            "Configured model(s) not found: "
+            + ", ".join(sorted(missing_models))
+            + f". Available models: {available}"
+        )
 
     thread = _collect_message_list(thread_messages)
     turn = TurnTranscript(user=user_text, thread=thread, rules=rules)

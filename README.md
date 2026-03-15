@@ -54,6 +54,7 @@ constitutional-ai-gui
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
 
 On first run, the GUI auto-creates a starter config file and opens Settings if required setup (like API key) is missing.
+In Settings, writer/judge model fields are dropdowns populated from live `/v1/models`.
 
 ## Use in Your Own Python Script
 
@@ -136,6 +137,10 @@ Transcript note:
 - Turn transcripts include `duration_ms`, so GUI/CLI/Python can all inspect elapsed turn time.
 - `max_iteration_ms` can stop long runs and return the latest revision (`0` means no limit).
 
+Model validation note:
+- Before each turn, writer/judge model names are validated against the live model list.
+- If a model is invalid, the error includes the available model IDs.
+
 ## Examples
 
 See the [examples](./examples) folder for scenario-based examples with separate READMEs:
@@ -175,6 +180,7 @@ Constraints:
 - `GET /api/config` -> current shared config
 - `POST /api/config` -> merge and persist shared config
 - `POST /api/test-connection` -> validate key/base URL/model connectivity from Settings
+- `POST /api/models` -> list available models for GUI dropdowns
 - `POST /api/turn-stream` -> run one turn and stream progress events (used by GUI status pill)
 - `POST /api/turn-cancel` -> request cancellation of an active streamed turn
 - `POST /api/turn` -> run one constitutional turn

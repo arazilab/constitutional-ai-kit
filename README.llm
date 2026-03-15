@@ -55,6 +55,7 @@ run_constitutional_turn(
 - Returns structured transcript (`writer.drafts`, `judge.checks`, `usage`, `final`).
 - Returns run-stage telemetry in `run.events` (initial, checks, critiques, revisions, completion).
 - Includes `duration_ms` for elapsed turn runtime.
+- Validates configured writer/judge models against live `/v1/models` before running.
 </context_1_notes>
 
 <context_1_example>
@@ -193,6 +194,7 @@ GET  /api/config
 POST /api/config
 POST /api/turn-stream
 POST /api/turn-cancel
+POST /api/models
 POST /api/turn
 </context_5_function>
 
@@ -201,6 +203,7 @@ POST /api/turn
 - `POST /api/config`: merges and persists config updates.
 - `POST /api/turn-stream`: streams run-stage events and final result for live GUI progress updates.
 - `POST /api/turn-cancel`: requests cooperative stop of an active streamed turn.
+- `POST /api/models`: lists available models for GUI writer/judge dropdowns.
 - `POST /api/turn`: runs one constitutional turn via `run_constitutional_turn`.
 - Additional utility endpoint exists: `POST /api/test-connection` for settings connectivity checks.
 - First run auto-creates starter config if missing and supports GUI-only setup.
@@ -234,10 +237,18 @@ chat_completion(
     max_tokens: int,
     timeout_ms: int
 ) -> CompletionResult
+
+list_models(
+    *,
+    api_key: str,
+    base_url: str,
+    timeout_ms: int
+) -> list[dict[str, Any]]
 </context_6_function>
 
 <context_6_notes>
 - Final endpoint URL is built centrally from normalized base URL.
+- Live model listing is fetched from `/v1/models` through the same shared client layer.
 - Debug URL logging can be enabled with `CONSTITUTIONAL_AI_DEBUG=1`.
 - TLS uses system CA roots, supports `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and uses `certifi` when available.
 - Never log API keys.

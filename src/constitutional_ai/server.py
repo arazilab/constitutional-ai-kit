@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from constitutional_ai.client import OpenAIAPIError, chat_completion
+from constitutional_ai.client import OpenAIAPIError, chat_completion, list_models
 from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, get_api_key_source, load_config, merge_config, save_config
 from constitutional_ai.engine import run_constitutional_turn
 from constitutional_ai.utils import normalize_chat_history
@@ -139,6 +139,9 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             config = _redacted_config_dict(self.server.state.get_config())
             _json_response(self, HTTPStatus.OK, {"ok": True, "config": config, "meta": self.server.state.metadata()})
             return
+        if self.path == "/api/models":
+            self._handle_models(None)
+            return
 
         _json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found"})
 
@@ -161,6 +164,9 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
                 return
             self.server.state.cancel_turn(turn_id)
             _json_response(self, HTTPStatus.OK, {"ok": True, "turn_id": turn_id})
+            return
+        if self.path == "/api/models":
+            self._handle_models(payload)
             return
 
         if self.path == "/api/config":
@@ -331,6 +337,29 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
                 },
             },
         )
+
+    def _handle_models(self, payload: dict[str, Any] | None) -> None:
+        """List available models using current config and optional settings overrides."""
+        base = self.server.state.get_config()
+        override_payload = {"settings": _sanitize_settings_payload(payload.get("settings"))} if isinstance(payload, dict) else {}
+        runtime = merge_config(base, override_payload)
+        settings = runtime.settings
+        if not settings.api_key.strip():
+            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Missing API key."})
+            return
+        try:
+            models = list_models(
+                api_key=settings.api_key,
+                base_url=settings.base_url,
+                timeout_ms=settings.timeout_ms,
+            )
+        except OpenAIAPIError as exc:
+            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001
+            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Model listing failed: {exc}"})
+            return
+        _json_response(self, HTTPStatus.OK, {"ok": True, "models": models})
 
 
 class ConstitutionalHTTPServer(ThreadingHTTPServer):
