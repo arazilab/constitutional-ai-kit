@@ -134,6 +134,35 @@ Show effective config:
 constitutional-ai config show --redact-key
 ```
 
+Set config values without editing JSON directly:
+
+```bash
+# Set string values
+constitutional-ai config set --key settings.writer_model --value gpt-4o-mini
+
+# Set typed values with JSON
+constitutional-ai config set --key settings.temperature --json-value 0.2
+constitutional-ai config set --key settings.parallel_max_iterations --json-value 1
+constitutional-ai config set --key rules --json-value '["Be concise.","Cite uncertainty clearly."]'
+constitutional-ai config set --key prompts.writer_system --value "You are a concise assistant."
+```
+
+Update config from scripts/notebooks:
+
+```python
+from constitutional_ai.config import load_config, save_config, set_config_value, update_config_value
+
+# One-shot update + save (uses default config path unless provided)
+update_config_value(None, "settings.execution_mode", "parallel")
+update_config_value(None, "settings.parallel_max_iterations", 1)
+
+# In-memory batch updates, then save once
+cfg = load_config()
+cfg = set_config_value(cfg, "settings.temperature", 0.2)
+cfg = set_config_value(cfg, "settings.max_tokens", 700)
+save_config(cfg)
+```
+
 Config shape:
 
 ```json
@@ -179,6 +208,12 @@ Transcript note:
 - Turn transcripts now include `run.events` timeline entries, including initial draft stage and sequential/parallel stage progress.
 - Turn transcripts include `duration_ms`, so GUI/CLI/Python can all inspect elapsed turn time.
 - `max_iteration_ms` can stop long runs and return the latest revision (`0` means no limit).
+- GUI transcript now shows both `critique` and `required_fixes` for failed rules.
+- In parallel mode, GUI transcript groups checks by iteration, then by rules within each iteration.
+
+Revision guidance note:
+- Default prompts now require `required_fixes` to be actionable (explicitly what to change and how).
+- Writer revisions treat `required_fixes` as mandatory in both sequential and parallel modes.
 
 Model validation note:
 - Before each turn, writer/judge model names are validated against the live model list.

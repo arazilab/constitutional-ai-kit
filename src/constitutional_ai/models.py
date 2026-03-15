@@ -97,6 +97,7 @@ class JudgeCheck:
     required_fixes: str = ""
     critique_raw: str = ""
     critique_usage: UsageStats = field(default_factory=UsageStats)
+    iteration: int | None = None
 
 
 @dataclass(slots=True)

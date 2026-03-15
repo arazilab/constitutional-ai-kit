@@ -8,7 +8,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, load_config, merge_config, save_config
+from constitutional_ai.config import (
+    AppConfig,
+    DEFAULT_CONFIG_PATH,
+    load_config,
+    merge_config,
+    save_config,
+    set_config_value,
+)
 from constitutional_ai.engine import run_constitutional_turn
 from constitutional_ai.models import ChatMessage
 from constitutional_ai.utils import sanitize_rules_text
@@ -116,6 +123,30 @@ def _config_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _config_set(args: argparse.Namespace) -> int:
+    """Set one config key by dotted path and persist the updated config."""
+    if args.value is None and args.json_value is None:
+        raise ValueError("Provide either --value or --json-value.")
+    if args.value is not None and args.json_value is not None:
+        raise ValueError("Use only one of --value or --json-value.")
+
+    config = load_config(args.config)
+    if args.json_value is not None:
+        value = json.loads(args.json_value)
+    else:
+        value = args.value
+
+    updated = set_config_value(config, args.key, value)
+    path = save_config(updated, args.config)
+    print(f"Updated {args.key} in {path}")
+    if args.show:
+        payload = updated.to_dict()
+        if args.redact_key and payload.get("settings", {}).get("api_key"):
+            payload["settings"]["api_key"] = "***redacted***"
+        print(json.dumps(payload, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser."""
     parser = argparse.ArgumentParser(description="Constitutional AI package CLI")
@@ -185,6 +216,23 @@ def build_parser() -> argparse.ArgumentParser:
     config_show.add_argument("--config", default=None, help="Path to config JSON")
     config_show.add_argument("--redact-key", action="store_true", help="Mask API key in output")
     config_show.set_defaults(func=_config_show)
+
+    config_set = config_sub.add_parser("set", help="Set one config value by dotted path")
+    config_set.add_argument("--config", default=None, help="Path to config JSON")
+    config_set.add_argument("--key", required=True, help="Dotted key path (example: settings.writer_model)")
+    config_set.add_argument(
+        "--value",
+        default=None,
+        help="Raw string value to set (for typed values use --json-value)",
+    )
+    config_set.add_argument(
+        "--json-value",
+        default=None,
+        help="JSON value to set (example: 0.2, 650, true, [\"Rule A\",\"Rule B\"])",
+    )
+    config_set.add_argument("--show", action="store_true", help="Print config after update")
+    config_set.add_argument("--redact-key", action="store_true", help="Mask API key when used with --show")
+    config_set.set_defaults(func=_config_set)
 
     return parser
 

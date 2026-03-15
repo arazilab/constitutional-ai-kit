@@ -55,6 +55,9 @@ run_constitutional_turn(
 - Parallel mode: evaluates all rules in parallel, critiques failing rules in parallel, performs one combined revision per round.
 - Returns structured transcript (`writer.drafts`, `judge.checks`, `usage`, `final`).
 - Returns run-stage telemetry in `run.events` (initial, checks, critiques, revisions, completion).
+- In parallel mode, judge checks include `iteration` to support iteration-first transcript rendering.
+- Judge critique defaults require actionable `required_fixes` (explicit edit guidance).
+- Writer revisions treat `required_fixes` as mandatory in both sequential and parallel flows.
 - Includes `duration_ms` for elapsed turn runtime.
 - Validates configured writer/judge models against live `/v1/models` before running.
 </context_1_notes>
@@ -89,6 +92,8 @@ load_config(path: str | Path | None = None) -> AppConfig
 <context_2_related_functions>
 save_config(config: AppConfig, path: str | Path | None = None) -> Path
 merge_config(base: AppConfig, payload: dict[str, Any] | None) -> AppConfig
+set_config_value(base: AppConfig, key_path: str, value: Any) -> AppConfig
+update_config_value(path: str | Path | None, key_path: str, value: Any) -> Path
 normalize_base_url(value: str) -> str
 </context_2_related_functions>
 
@@ -102,7 +107,13 @@ normalize_base_url(value: str) -> str
 </context_2_notes>
 
 <context_2_example>
-from constitutional_ai.config import load_config, merge_config
+from constitutional_ai.config import (
+    load_config,
+    merge_config,
+    save_config,
+    set_config_value,
+    update_config_value,
+)
 
 base = load_config()
 cfg = merge_config(
@@ -114,6 +125,14 @@ cfg = merge_config(
         }
     },
 )
+
+# One-shot persisted update
+update_config_value(None, "settings.execution_mode", "parallel")
+
+# Batch updates then save once
+cfg = set_config_value(cfg, "settings.temperature", 0.2)
+cfg = set_config_value(cfg, "settings.max_tokens", 700)
+save_config(cfg)
 </context_2_example>
 </context_2>
 
@@ -162,6 +181,9 @@ constitutional-ai chat [--config PATH]
                        [--execution-mode sequential|parallel]
                        [--parallel-max-iterations N] [--max-iteration-ms MS]
                        [--show-metrics]
+
+constitutional-ai config set --key <dotted.path> [--value <string> | --json-value <json>]
+                             [--config PATH] [--show] [--redact-key]
 </context_4_function>
 
 <context_4_notes>
@@ -179,6 +201,11 @@ constitutional-ai run --prompt "Summarize constitutional AI"
 constitutional-ai run --prompt "Draft policy guidance" \
   --execution-mode parallel \
   --parallel-max-iterations 1
+
+# Config updates without editing JSON directly
+constitutional-ai config set --key settings.writer_model --value gpt-4o-mini
+constitutional-ai config set --key settings.temperature --json-value 0.2
+constitutional-ai config set --key rules --json-value '["Rule A","Rule B"]'
 </context_4_example>
 </context_4>
 

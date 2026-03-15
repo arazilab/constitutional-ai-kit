@@ -89,7 +89,8 @@ class PromptTemplates:
 
     writer_system: str = (
         "You are the writer agent. Write a helpful, safe, and accurate assistant response to the user's prompt. "
-        "If you are revising, incorporate the judge's critique and follow the provided rule. "
+        "If you are revising, treat required fixes as a mandatory checklist and make concrete edits that satisfy each fix. "
+        "Use the critique as supporting context, but prioritize completing every required fix. "
         "Return ONLY the final user-facing answer, with no meta-commentary."
     )
     judge_pass_system: str = (
@@ -101,8 +102,10 @@ class PromptTemplates:
     )
     judge_critique_system: str = (
         "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. "
-        "The answer already failed the rule. Provide critique and concrete required fixes. Return JSON ONLY "
-        "(no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}."
+        "The answer already failed the rule. Provide critique and concrete required fixes. "
+        "The required_fixes field must be an explicit actionable edit guide that says what to change and how to change it "
+        "so the specific failure is fixed. Avoid vague wording like 'improve' or 'be better'. "
+        "Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}."
     )
 
     @staticmethod
@@ -206,3 +209,30 @@ def merge_config(base: AppConfig, payload: dict[str, Any] | None) -> AppConfig:
         merged.prompts = PromptTemplates.from_mapping({**asdict(merged.prompts), **payload["prompts"]})
 
     return merged
+
+
+def set_config_value(base: AppConfig, key_path: str, value: Any) -> AppConfig:
+    """Set one dotted key path in config and return the updated config object."""
+    dotted = str(key_path or "").strip()
+    if not dotted:
+        raise ValueError("key_path is required.")
+    parts = dotted.split(".")
+    payload = base.to_dict()
+    cursor: Any = payload
+    for part in parts[:-1]:
+        if not isinstance(cursor, dict) or part not in cursor or not isinstance(cursor[part], dict):
+            raise ValueError(f"Invalid key path: {dotted}")
+        cursor = cursor[part]
+    leaf = parts[-1]
+    if not isinstance(cursor, dict) or leaf not in cursor:
+        raise ValueError(f"Invalid key path: {dotted}")
+    cursor[leaf] = value
+    return AppConfig.from_mapping(payload)
+
+
+def update_config_value(path: str | Path | None, key_path: str, value: Any) -> Path:
+    """Load config, set one dotted key path, save it, and return saved path."""
+    cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
+    config = load_config(cfg_path)
+    updated = set_config_value(config, key_path, value)
+    return save_config(updated, cfg_path)

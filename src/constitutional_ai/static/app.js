@@ -178,14 +178,15 @@ function renderTranscript() {
       for (const event of events) {
         const item = document.createElement("div");
         const rulePart = Number.isFinite(event.rule_index) ? ` | rule ${event.rule_index + 1}` : "";
-        const iterPart = Number.isFinite(event.iteration) ? ` | iter ${event.iteration}` : "";
+        const iterPart = Number.isFinite(event.iteration) ? ` | iteration ${event.iteration + 1}` : "";
         item.textContent = `${event.stage}${rulePart}${iterPart}: ${event.message}`;
         timelineBody.appendChild(item);
       }
       details.appendChild(timeline);
     }
 
-    for (const check of turn.judge?.checks || []) {
+    /** Create one rule-check details block for transcript output. */
+    const renderRuleCheck = (check) => {
       const checkNode = document.createElement("details");
       checkNode.style.marginTop = "8px";
       const status = check.applies === false ? "N/A" : check.pass ? "PASS" : "FAIL";
@@ -200,16 +201,50 @@ function renderTranscript() {
       content.textContent = check.rule || "";
       checkNode.appendChild(content);
 
-      if (check.critique) {
+      if (check.applies !== false && check.pass === false) {
         const critique = document.createElement("div");
         critique.className = "msg";
         critique.style.marginTop = "6px";
         critique.innerHTML = `<div class="small">Critique</div><div class="content"></div>`;
-        critique.querySelector(".content").textContent = check.critique;
+        critique.querySelector(".content").textContent = check.critique || "(No critique provided.)";
         checkNode.appendChild(critique);
-      }
 
-      details.appendChild(checkNode);
+        const fixes = document.createElement("div");
+        fixes.className = "msg";
+        fixes.style.marginTop = "6px";
+        fixes.innerHTML = `<div class="small">Required fixes</div><div class="content"></div>`;
+        fixes.querySelector(".content").textContent = check.required_fixes || "(No required fixes provided.)";
+        checkNode.appendChild(fixes);
+      }
+      return checkNode;
+    };
+
+    const checks = turn.judge?.checks || [];
+    const hasIterationData = checks.some((check) => Number.isFinite(check.iteration));
+    if (hasIterationData) {
+      const groups = new Map();
+      for (const check of checks) {
+        const key = Number.isFinite(check.iteration) ? check.iteration : -1;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(check);
+      }
+      const orderedIterations = Array.from(groups.keys()).sort((a, b) => a - b);
+      for (const iteration of orderedIterations) {
+        const iterationChecks = groups.get(iteration) || [];
+        const failedInIteration = iterationChecks.filter((c) => c.applies !== false && c.pass === false).length;
+        const iterationNode = document.createElement("details");
+        iterationNode.style.marginTop = "8px";
+        const label = iteration >= 0 ? `Iteration ${iteration + 1}` : "Checks (unscoped)";
+        iterationNode.innerHTML = `<summary>${label} | checks: ${iterationChecks.length} | failed: ${failedInIteration}</summary>`;
+        for (const check of iterationChecks) {
+          iterationNode.appendChild(renderRuleCheck(check));
+        }
+        details.appendChild(iterationNode);
+      }
+    } else {
+      for (const check of checks) {
+        details.appendChild(renderRuleCheck(check));
+      }
     }
 
     root.appendChild(details);
@@ -650,11 +685,11 @@ function bindEvents() {
         rules: state.config?.rules || [],
         prompts: {
           writer_system:
-            "You are the writer agent. Write a helpful, safe, and accurate assistant response to the user's prompt. If you are revising, incorporate the judge's critique and follow the provided rule. Return ONLY the final user-facing answer, with no meta-commentary.",
+            "You are the writer agent. Write a helpful, safe, and accurate assistant response to the user's prompt. If you are revising, treat required fixes as a mandatory checklist and make concrete edits that satisfy each fix. Use the critique as supporting context, but prioritize completing every required fix. Return ONLY the final user-facing answer, with no meta-commentary.",
           judge_pass_system:
             "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer follows the rule. Schema: {\"applies\": boolean, \"pass\": boolean}. Constraints: if applies is false, pass MUST be true.",
           judge_critique_system:
-            "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. The answer already failed the rule. Provide critique and concrete required fixes. Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}.",
+            "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. The answer already failed the rule. Provide critique and concrete required fixes. The required_fixes field must be an explicit actionable edit guide that says what to change and how to change it so the specific failure is fixed. Avoid vague wording like 'improve' or 'be better'. Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}.",
         },
       };
       document.getElementById("set-api-key").value = "";

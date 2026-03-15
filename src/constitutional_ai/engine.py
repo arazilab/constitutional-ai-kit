@@ -150,7 +150,10 @@ def _judge_critique_for_rule(
     if not critique:
         critique = "Judge output was not valid JSON. Please revise to satisfy the rule."
     if not required_fixes:
-        required_fixes = "Revise the answer to satisfy the rule."
+        required_fixes = (
+            f"Update the answer to satisfy rule: {rule}. "
+            "Make specific edits that resolve the issue described in the critique and remove the violating content."
+        )
     return critique, required_fixes, critique_raw, critique_res.usage
 
 
@@ -196,6 +199,7 @@ def _writer_revision(
                         required_fixes or "(No required fixes provided.)",
                         "",
                         "Rewrite the answer to fully satisfy the rule(s) and the user's request.",
+                        "Treat required fixes as mandatory. Ensure each required fix is explicitly addressed in your revision.",
                     ]
                 ),
             },
@@ -346,6 +350,7 @@ def run_constitutional_turn(
                     passed=passed,
                     pass_raw=pass_raw,
                     pass_usage=pass_usage,
+                    iteration=revision_rounds,
                 )
                 checks_for_round.append(check)
                 turn.usage.add(pass_usage)
