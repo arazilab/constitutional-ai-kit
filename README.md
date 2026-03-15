@@ -47,14 +47,18 @@ constitutional-ai chat --show-metrics
 
 ### 3. Run GUI
 
-```bash
-constitutional-ai-gui
-```
-
-Simplest setup (auto-create venv, install deps, and launch GUI):
+**Recommended (easiest, non-technical):**
 
 ```bash
 python3 launch_gui.py
+```
+
+This automatically creates a local virtual environment, installs dependencies, and starts the GUI.
+
+Alternative (if you already installed the package yourself):
+
+```bash
+constitutional-ai-gui
 ```
 
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
