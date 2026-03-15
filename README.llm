@@ -98,6 +98,7 @@ normalize_base_url(value: str) -> str
 - `base_url` is normalized/validated to prevent malformed OpenAI endpoint construction.
 - Runtime settings include execution mode and parallel iteration limit.
 - Runtime settings include `max_iteration_ms` (`0` means no time-budget limit).
+- In some notebook kernels (Colab/Jupyter), editable installs may require adding repo `src` to `sys.path` for imports.
 </context_2_notes>
 
 <context_2_example>

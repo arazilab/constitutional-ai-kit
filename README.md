@@ -19,6 +19,39 @@ pip install -e .
 Python requirement: `>=3.10`
 Runtime dependency installed with package: `certifi` (for CA bundle handling).
 
+### Notebook environments (Colab / Jupyter)
+
+If you installed with editable mode (`pip install -e .`) and imports fail in a notebook with:
+
+```text
+ModuleNotFoundError: No module named 'constitutional_ai'
+```
+
+add the repository `src` directory to Python's path before imports:
+
+```python
+import sys
+sys.path.insert(0, "/content/repo/src")
+```
+
+Then imports work normally:
+
+```python
+from constitutional_ai.config import load_config
+from constitutional_ai.engine import run_constitutional_turn
+from constitutional_ai.models import ChatMessage
+```
+
+This can happen in some notebook kernels with editable installs and `src` layout projects.
+
+For Colab/Jupyter, a reliable alternative is:
+
+```bash
+pip install .
+```
+
+instead of editable mode.
+
 ## Quick Start
 
 ### 1. Set API key
