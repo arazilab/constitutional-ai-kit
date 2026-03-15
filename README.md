@@ -51,6 +51,12 @@ constitutional-ai chat --show-metrics
 constitutional-ai-gui
 ```
 
+Simplest setup (auto-create venv, install deps, and launch GUI):
+
+```bash
+python3 launch_gui.py
+```
+
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
 
 On first run, the GUI auto-creates a starter config file and opens Settings if required setup (like API key) is missing.

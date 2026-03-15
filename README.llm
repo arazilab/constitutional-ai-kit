@@ -27,6 +27,7 @@ Main components:
 - `constitutional_ai.models`: typed dataclasses for messages and transcripts
 - `constitutional_ai.cli`: command-line interface
 - `constitutional_ai.server`: GUI + HTTP API wrapper around shared engine
+- `launch_gui.py`: one-command bootstrap (create venv, install package, launch GUI)
 
 Key architecture constraint:
 - there is one backend core. Interfaces must only adapt input/output and call shared modules.
