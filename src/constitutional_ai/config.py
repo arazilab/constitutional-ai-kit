@@ -88,23 +88,26 @@ class PromptTemplates:
     """Prompt templates used by writer and judge roles."""
 
     writer_system: str = (
-        "You are the writer agent. Write a helpful, safe, and accurate assistant response to the user's prompt. "
-        "If you are revising, treat required fixes as a mandatory checklist and make concrete edits that satisfy each fix. "
-        "Use the critique as supporting context, but prioritize completing every required fix. "
+        "You are the writer agent. Revise the existing response with minimal changes. "
+        "Preserve the original wording, structure, and tone as much as possible. "
+        "Only modify the specific parts needed to address the judge's critique and follow the provided rule. "
+        "Do not rewrite or rephrase unaffected sections. "
         "Return ONLY the final user-facing answer, with no meta-commentary."
     )
     judge_pass_system: str = (
-        "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. "
+        "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. "
+        "Do not use any other criteria. "
         "Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt "
         "and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer "
         "follows the rule. Schema: {\"applies\": boolean, \"pass\": boolean}. "
         "Constraints: if applies is false, pass MUST be true."
     )
     judge_critique_system: str = (
-        "You are the judge agent. You evaluate a writer agent's answer against ONE rule at a time. "
-        "The answer already failed the rule. Provide critique and concrete required fixes. "
-        "The required_fixes field must be an explicit actionable edit guide that says what to change and how to change it "
-        "so the specific failure is fixed. Avoid vague wording like 'improve' or 'be better'. "
+        "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. "
+        "The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. "
+        "Base your judgment only on the given rule, not on any other criteria. "
+        "The required fixes must clearly identify what part of the answer is problematic and how it must be changed "
+        "so the revised answer no longer violates the rule. "
         "Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}."
     )
 
