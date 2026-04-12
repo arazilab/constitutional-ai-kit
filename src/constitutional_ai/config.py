@@ -93,7 +93,7 @@ def build_litellm_model(provider: str, model: str) -> str:
     normalized_model = str(model or "").strip()
     if not normalized_model:
         raise ValueError("Model is required.")
-    if "/" in normalized_model and normalized_model.split("/", 1)[0] in set(PROVIDER_CREDENTIAL_FIELDS) | PROVIDERS_WITH_OPTIONAL_KEYS:
+    if "/" in normalized_model and normalized_model.split("/", 1)[0] == normalized_provider:
         return normalized_model
     return f"{normalized_provider}/{normalized_model}"
 

@@ -8,6 +8,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
+from urllib.parse import urlparse, urlunparse
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
@@ -101,6 +102,23 @@ def _usage_from_response(raw: dict[str, Any]) -> UsageStats:
     return UsageStats.from_mapping(raw.get("usage") if isinstance(raw, dict) else None)
 
 
+def _normalize_runtime_api_base(provider: str, api_base: str) -> str:
+    """Adjust provider base URLs to what LiteLLM expects at request time."""
+    raw = str(api_base or "").strip()
+    if not raw:
+        return ""
+    if provider != "openai":
+        return raw
+
+    parsed = urlparse(raw)
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/v1"
+    elif path != "/v1":
+        return raw
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+
 def _build_completion_kwargs(
     *,
     endpoint: ModelSettings,
@@ -124,7 +142,7 @@ def _build_completion_kwargs(
     if api_key:
         kwargs["api_key"] = api_key
     if endpoint.api_base:
-        kwargs["api_base"] = endpoint.api_base
+        kwargs["api_base"] = _normalize_runtime_api_base(endpoint.provider, endpoint.api_base)
     if endpoint.api_version:
         kwargs["api_version"] = endpoint.api_version
     return kwargs
@@ -142,7 +160,7 @@ def _temporary_provider_environment(endpoint: ModelSettings, credentials: Provid
         if credential:
             updates[env_var] = credential
     if endpoint.provider == "openai" and endpoint.api_base:
-        updates["OPENAI_BASE_URL"] = endpoint.api_base
+        updates["OPENAI_BASE_URL"] = _normalize_runtime_api_base(endpoint.provider, endpoint.api_base)
     if endpoint.provider == "azure":
         if endpoint.api_base:
             updates["AZURE_API_BASE"] = endpoint.api_base
