@@ -77,6 +77,7 @@ class WriterDraft:
     kind: str
     content: str
     usage: UsageStats
+    iteration: int | None = None
     rule_index: int | None = None
     rule: str | None = None
     based_on_critique: str | None = None

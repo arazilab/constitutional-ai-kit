@@ -287,6 +287,7 @@ def run_constitutional_turn(
             kind="initial",
             content=current,
             usage=initial.usage,
+            iteration=None,
         )
     )
     turn.usage.add(initial.usage)
@@ -441,6 +442,7 @@ def run_constitutional_turn(
                     at=now_iso(),
                     kind="revision",
                     content=current,
+                    iteration=revision_rounds,
                     based_on_critique=combined_critique,
                     usage=revision_usage,
                 )
@@ -564,6 +566,7 @@ def run_constitutional_turn(
                     WriterDraft(
                         at=now_iso(),
                         kind="revision",
+                        iteration=revisions_for_rule,
                         rule_index=rule_index,
                         rule=rule,
                         content=current,

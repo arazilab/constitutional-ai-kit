@@ -6,17 +6,17 @@ const STORAGE = {
 };
 
 const PROVIDERS = [
-  { id: "openai", label: "OpenAI", credential: "openai_api_key", requiresKey: true, defaultModel: "gpt-4o-mini" },
-  { id: "anthropic", label: "Anthropic", credential: "anthropic_api_key", requiresKey: true, defaultModel: "claude-sonnet-4-5-20250929" },
-  { id: "gemini", label: "Gemini", credential: "gemini_api_key", requiresKey: true, defaultModel: "gemini-2.5-flash" },
-  { id: "xai", label: "xAI", credential: "xai_api_key", requiresKey: true, defaultModel: "grok-2-latest" },
-  { id: "openrouter", label: "OpenRouter", credential: "openrouter_api_key", requiresKey: true, defaultModel: "openai/gpt-4o-mini" },
-  { id: "groq", label: "Groq", credential: "groq_api_key", requiresKey: true, defaultModel: "llama-3.3-70b-versatile" },
-  { id: "togetherai", label: "Together AI", credential: "togetherai_api_key", requiresKey: true, defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
-  { id: "huggingface", label: "Hugging Face", credential: "huggingface_api_key", requiresKey: true, defaultModel: "meta-llama/Meta-Llama-3.1-8B-Instruct" },
-  { id: "azure", label: "Azure OpenAI", credential: "azure_api_key", requiresKey: true, defaultModel: "gpt-4o-mini" },
-  { id: "ollama", label: "Ollama", credential: null, requiresKey: false, defaultModel: "llama3.2" },
-  { id: "lm_studio", label: "LM Studio", credential: null, requiresKey: false, defaultModel: "local-model" },
+  { id: "openai", label: "OpenAI", credential: "openai_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "https://api.openai.com", defaultApiVersion: "" },
+  { id: "anthropic", label: "Anthropic", credential: "anthropic_api_key", requiresKey: true, defaultModel: "claude-sonnet-4-5-20250929", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "gemini", label: "Gemini", credential: "gemini_api_key", requiresKey: true, defaultModel: "gemini-2.5-flash", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "xai", label: "xAI", credential: "xai_api_key", requiresKey: true, defaultModel: "grok-2-latest", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "openrouter", label: "OpenRouter", credential: "openrouter_api_key", requiresKey: true, defaultModel: "openai/gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "groq", label: "Groq", credential: "groq_api_key", requiresKey: true, defaultModel: "llama-3.3-70b-versatile", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "togetherai", label: "Together AI", credential: "togetherai_api_key", requiresKey: true, defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "huggingface", label: "Hugging Face", credential: "huggingface_api_key", requiresKey: true, defaultModel: "meta-llama/Meta-Llama-3.1-8B-Instruct", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "azure", label: "Azure OpenAI", credential: "azure_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "" },
+  { id: "ollama", label: "Ollama", credential: null, requiresKey: false, defaultModel: "llama3.2", defaultApiBase: "http://localhost:11434", defaultApiVersion: "" },
+  { id: "lm_studio", label: "LM Studio", credential: null, requiresKey: false, defaultModel: "local-model", defaultApiBase: "http://localhost:1234", defaultApiVersion: "" },
 ];
 
 const CREDENTIAL_INPUTS = {
@@ -251,19 +251,27 @@ function renderTranscript() {
     summary.textContent = `User: ${truncate(turn.user || "", 70)} | checks: ${(turn.judge?.checks || []).length} | failed: ${failed} | total tokens: ${usage.total_tokens} | duration: ${duration} ms`;
     details.appendChild(summary);
 
-    const finalBlock = document.createElement("div");
-    finalBlock.className = "msg";
-    finalBlock.style.marginTop = "8px";
-    finalBlock.innerHTML = `<div class="small">Final answer</div><div class="content"></div>`;
-    finalBlock.querySelector(".content").textContent = turn.final || "";
-    details.appendChild(finalBlock);
+    const drafts = turn.writer?.drafts || [];
+    const initialDraft = drafts.find((draft) => draft.kind === "initial");
+    const revisionDrafts = drafts.filter((draft) => draft.kind === "revision");
 
-    const initialDraft = (turn.writer?.drafts || []).find((draft) => draft.kind === "initial");
+    const renderDraftBlock = (label, content) => {
+      const block = document.createElement("div");
+      block.className = "msg";
+      block.style.marginTop = "8px";
+      block.innerHTML = `<div class="small"></div><div class="content"></div>`;
+      block.querySelector(".small").textContent = label;
+      block.querySelector(".content").textContent = content || "";
+      return block;
+    };
+
+    details.appendChild(renderDraftBlock("Final answer", turn.final || ""));
+
     if (initialDraft?.content) {
       const initial = document.createElement("details");
       initial.style.marginTop = "8px";
-      initial.innerHTML = `<summary>Initial draft state</summary><div class="msg" style="margin-top:6px"><div class="content"></div></div>`;
-      initial.querySelector(".content").textContent = initialDraft.content;
+      initial.innerHTML = `<summary>Initial draft</summary>`;
+      initial.appendChild(renderDraftBlock("Initial writer response", initialDraft.content));
       details.appendChild(initial);
     }
 
@@ -313,6 +321,20 @@ function renderTranscript() {
         fixes.querySelector(".content").textContent = check.required_fixes || "(No required fixes provided.)";
         checkNode.appendChild(fixes);
       }
+
+      const matchingRevisions = revisionDrafts.filter((draft) => {
+        if (Number.isFinite(check.iteration) && Number.isFinite(draft.iteration)) {
+          return draft.iteration === check.iteration;
+        }
+        return Number.isFinite(draft.rule_index) && draft.rule_index === check.rule_index;
+      });
+      for (const [index, draft] of matchingRevisions.entries()) {
+        const label =
+          matchingRevisions.length > 1
+            ? `Revised response ${index + 1}`
+            : "Revised response";
+        checkNode.appendChild(renderDraftBlock(label, draft.content));
+      }
       return checkNode;
     };
 
@@ -329,16 +351,37 @@ function renderTranscript() {
       for (const iteration of orderedIterations) {
         const iterationChecks = groups.get(iteration) || [];
         const failedInIteration = iterationChecks.filter((c) => c.applies !== false && c.pass === false).length;
+        const iterationRevisions = revisionDrafts.filter((draft) => Number.isFinite(draft.iteration) && draft.iteration === iteration);
         const iterationNode = document.createElement("details");
         iterationNode.style.marginTop = "8px";
         const label = iteration >= 0 ? `Iteration ${iteration + 1}` : "Checks (unscoped)";
         iterationNode.innerHTML = `<summary>${label} | checks: ${iterationChecks.length} | failed: ${failedInIteration}</summary>`;
+        for (const [index, draft] of iterationRevisions.entries()) {
+          const revisionLabel =
+            iterationRevisions.length > 1
+              ? `Revised response ${index + 1} at end of iteration`
+              : "Revised response at end of iteration";
+          iterationNode.appendChild(renderDraftBlock(revisionLabel, draft.content));
+        }
         for (const check of iterationChecks) {
           iterationNode.appendChild(renderRuleCheck(check));
         }
         details.appendChild(iterationNode);
       }
     } else {
+      if (revisionDrafts.length) {
+        const revisionsNode = document.createElement("details");
+        revisionsNode.style.marginTop = "8px";
+        revisionsNode.innerHTML = `<summary>Revisions (${revisionDrafts.length})</summary>`;
+        for (const [index, draft] of revisionDrafts.entries()) {
+          const label =
+            Number.isFinite(draft.rule_index)
+              ? `Revised response after rule ${draft.rule_index + 1}`
+              : `Revised response ${index + 1}`;
+          revisionsNode.appendChild(renderDraftBlock(label, draft.content));
+        }
+        details.appendChild(revisionsNode);
+      }
       for (const check of checks) {
         details.appendChild(renderRuleCheck(check));
       }
@@ -756,6 +799,10 @@ function applyProviderDefaults(role) {
   const provider = providerMeta(providerId);
   state.config.settings[role].provider = providerId;
   state.config.settings[role].model = provider.defaultModel;
+  state.config.settings[role].api_base = provider.defaultApiBase || "";
+  state.config.settings[role].api_version = provider.defaultApiVersion || "";
+  document.getElementById(`${role}-api-base`).value = state.config.settings[role].api_base;
+  document.getElementById(`${role}-api-version`).value = state.config.settings[role].api_version;
   state.models[role] = { models: [], supportsListing: false, manual: true };
   syncModelControl(role);
   syncStatusPills();
