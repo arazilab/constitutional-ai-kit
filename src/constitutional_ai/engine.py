@@ -7,7 +7,7 @@ import json
 import time
 from typing import Any, Callable
 
-from constitutional_ai.client import OpenAIAPIError, chat_completion, list_models
+from constitutional_ai.client import chat_completion
 from constitutional_ai.config import AppConfig
 from constitutional_ai.models import ChatMessage, JudgeCheck, TurnEvent, TurnTranscript, UsageStats, WriterDraft, now_iso
 
@@ -38,9 +38,8 @@ def _collect_message_list(thread_messages: list[ChatMessage]) -> list[dict[str, 
 
 def _judge_pass_for_rule(
     *,
-    api_key: str,
-    base_url: str,
-    model: str,
+    endpoint: Any,
+    credentials: Any,
     timeout_ms: int,
     max_tokens: int,
     system_prompt: str,
@@ -51,9 +50,8 @@ def _judge_pass_for_rule(
 ) -> tuple[bool, bool, str, UsageStats]:
     """Run one rule pass-check and return normalized applies/pass flags plus raw payload."""
     pass_res = chat_completion(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
+        endpoint=endpoint,
+        credentials=credentials,
         messages=[
             {"role": "system", "content": system_prompt},
             {
@@ -93,9 +91,8 @@ def _judge_pass_for_rule(
 
 def _judge_critique_for_rule(
     *,
-    api_key: str,
-    base_url: str,
-    model: str,
+    endpoint: Any,
+    credentials: Any,
     timeout_ms: int,
     max_tokens: int,
     system_prompt: str,
@@ -106,9 +103,8 @@ def _judge_critique_for_rule(
 ) -> tuple[str, str, str, UsageStats]:
     """Run one rule critique and return parsed critique/fixes plus raw payload."""
     critique_res = chat_completion(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
+        endpoint=endpoint,
+        credentials=credentials,
         messages=[
             {"role": "system", "content": system_prompt},
             {
@@ -159,9 +155,8 @@ def _judge_critique_for_rule(
 
 def _writer_revision(
     *,
-    api_key: str,
-    base_url: str,
-    model: str,
+    endpoint: Any,
+    credentials: Any,
     timeout_ms: int,
     temperature: float,
     max_tokens: int,
@@ -174,9 +169,8 @@ def _writer_revision(
 ) -> tuple[str, UsageStats]:
     """Ask writer to revise current answer from critique/fix guidance."""
     revision = chat_completion(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
+        endpoint=endpoint,
+        credentials=credentials,
         messages=[
             {"role": "system", "content": system_prompt},
             {
@@ -225,17 +219,6 @@ def run_constitutional_turn(
     rules = [line.strip() for line in config.rules if line.strip()]
     started = time.perf_counter()
     deadline = (started + (settings.max_iteration_ms / 1000.0)) if settings.max_iteration_ms > 0 else None
-
-    models = list_models(api_key=settings.api_key, base_url=settings.base_url, timeout_ms=settings.timeout_ms)
-    model_ids = {str(model.get("id", "")) for model in models}
-    missing_models = [name for name in {settings.writer_model, settings.judge_model} if name not in model_ids]
-    if missing_models:
-        available = ", ".join(sorted(model_ids)) if model_ids else "(no models returned)"
-        raise OpenAIAPIError(
-            "Configured model(s) not found: "
-            + ", ".join(sorted(missing_models))
-            + f". Available models: {available}"
-        )
 
     thread = _collect_message_list(thread_messages)
     turn = TurnTranscript(user=user_text, thread=thread, rules=rules)
@@ -290,9 +273,8 @@ def run_constitutional_turn(
 
     add_event(stage="initial_started", message="Generating initial writer draft.")
     initial = chat_completion(
-        api_key=settings.api_key,
-        base_url=settings.base_url,
-        model=settings.writer_model,
+        endpoint=settings.writer,
+        credentials=settings.credentials,
         messages=[{"role": "system", "content": prompts.writer_system}, *thread],
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
@@ -323,9 +305,8 @@ def run_constitutional_turn(
                 pass_results = list(
                     executor.map(
                         lambda pair: _judge_pass_for_rule(
-                            api_key=settings.api_key,
-                            base_url=settings.base_url,
-                            model=settings.judge_model,
+                            endpoint=settings.judge,
+                            credentials=settings.credentials,
                             timeout_ms=settings.timeout_ms,
                             max_tokens=settings.max_tokens,
                             system_prompt=prompts.judge_pass_system,
@@ -394,9 +375,8 @@ def run_constitutional_turn(
                 critique_results = list(
                     executor.map(
                         lambda idx: _judge_critique_for_rule(
-                            api_key=settings.api_key,
-                            base_url=settings.base_url,
-                            model=settings.judge_model,
+                            endpoint=settings.judge,
+                            credentials=settings.credentials,
                             timeout_ms=settings.timeout_ms,
                             max_tokens=settings.max_tokens,
                             system_prompt=prompts.judge_critique_system,
@@ -444,9 +424,8 @@ def run_constitutional_turn(
 
             add_event(stage="parallel_revision_started", message="Applying combined writer revision.", iteration=revision_rounds)
             current, revision_usage = _writer_revision(
-                api_key=settings.api_key,
-                base_url=settings.base_url,
-                model=settings.writer_model,
+                endpoint=settings.writer,
+                credentials=settings.credentials,
                 timeout_ms=settings.timeout_ms,
                 temperature=settings.temperature,
                 max_tokens=settings.max_tokens,
@@ -481,9 +460,8 @@ def run_constitutional_turn(
                     break
                 add_event(stage="sequential_check_started", message=f"Checking rule {rule_index + 1}.", rule_index=rule_index, rule=rule)
                 applies, passed, pass_raw, pass_usage = _judge_pass_for_rule(
-                    api_key=settings.api_key,
-                    base_url=settings.base_url,
-                    model=settings.judge_model,
+                    endpoint=settings.judge,
+                    credentials=settings.credentials,
                     timeout_ms=settings.timeout_ms,
                     max_tokens=settings.max_tokens,
                     system_prompt=prompts.judge_pass_system,
@@ -500,9 +478,8 @@ def run_constitutional_turn(
 
                 if applies and not passed:
                     critique, required_fixes, critique_raw, critique_usage = _judge_critique_for_rule(
-                        api_key=settings.api_key,
-                        base_url=settings.base_url,
-                        model=settings.judge_model,
+                        endpoint=settings.judge,
+                        credentials=settings.credentials,
                         timeout_ms=settings.timeout_ms,
                         max_tokens=settings.max_tokens,
                         system_prompt=prompts.judge_critique_system,
@@ -571,9 +548,8 @@ def run_constitutional_turn(
                     rule=rule,
                 )
                 current, revision_usage = _writer_revision(
-                    api_key=settings.api_key,
-                    base_url=settings.base_url,
-                    model=settings.writer_model,
+                    endpoint=settings.writer,
+                    credentials=settings.credentials,
                     timeout_ms=settings.timeout_ms,
                     temperature=settings.temperature,
                     max_tokens=settings.max_tokens,

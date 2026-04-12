@@ -20,7 +20,7 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "certifi>=2024.2.2",
+  "litellm",
 ]
 
 [project.scripts]

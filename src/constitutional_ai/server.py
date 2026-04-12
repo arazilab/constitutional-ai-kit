@@ -14,8 +14,17 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from constitutional_ai.client import OpenAIAPIError, chat_completion, list_models
-from constitutional_ai.config import AppConfig, DEFAULT_CONFIG_PATH, get_api_key_source, load_config, merge_config, save_config
+from constitutional_ai.client import LiteLLMAPIError, chat_completion, list_models
+from constitutional_ai.config import (
+    AppConfig,
+    DEFAULT_CONFIG_PATH,
+    credential_field_for_provider,
+    get_credential_sources,
+    load_config,
+    merge_config,
+    provider_requires_api_key,
+    save_config,
+)
 from constitutional_ai.engine import run_constitutional_turn
 from constitutional_ai.utils import normalize_chat_history
 
@@ -35,6 +44,19 @@ def _stream_json_line(handler: BaseHTTPRequestHandler, payload: dict[str, Any]) 
     body = (json.dumps(payload) + "\n").encode("utf-8")
     handler.wfile.write(body)
     handler.wfile.flush()
+
+
+def _credential_present(config: AppConfig, provider: str) -> bool:
+    """Return True when config contains a credential for the provider."""
+    field_name = credential_field_for_provider(provider)
+    if not field_name:
+        return False
+    return bool(str(getattr(config.settings.credentials, field_name, "") or "").strip())
+
+
+def _role_from_payload(payload: dict[str, Any]) -> str:
+    role = str(payload.get("role", "writer") or "writer").strip().lower()
+    return role if role in {"writer", "judge"} else "writer"
 
 
 class AppState:
@@ -68,16 +90,27 @@ class AppState:
             return AppConfig.from_mapping(self.config.to_dict())
 
     def metadata(self) -> dict[str, Any]:
-        """Return UI metadata about config and API key source."""
+        """Return UI metadata about config and provider credential sources."""
         with self._lock:
-            key_source = get_api_key_source(self.config_path)
-            persisted_payload = self.config.to_dict()
-            effective_has_key = bool(str(persisted_payload["settings"].get("api_key", "")).strip())
+            credential_sources = get_credential_sources(self.config_path)
             return {
                 "config_path": str(self.config_path),
                 "config_created": self.config_created,
-                "api_key_source": key_source,
-                "api_key_present": effective_has_key,
+                "credential_sources": credential_sources,
+                "credential_presence": {
+                    field_name: _credential_present(self.config, provider)
+                    for provider, field_name in {
+                        "openai": "openai_api_key",
+                        "anthropic": "anthropic_api_key",
+                        "gemini": "gemini_api_key",
+                        "xai": "xai_api_key",
+                        "openrouter": "openrouter_api_key",
+                        "groq": "groq_api_key",
+                        "togetherai": "togetherai_api_key",
+                        "huggingface": "huggingface_api_key",
+                        "azure": "azure_api_key",
+                    }.items()
+                },
                 "load_error": self.load_error,
             }
 
@@ -103,22 +136,28 @@ class AppState:
 
 
 def _sanitize_settings_payload(settings: Any) -> dict[str, Any] | None:
-    """Return settings overrides while preserving existing API key on blank input."""
+    """Return settings overrides while preserving existing stored credentials on blank input."""
     if not isinstance(settings, dict):
         return None
     cleaned = dict(settings)
-    incoming_key = str(cleaned.get("api_key", "") or "").strip()
-    if incoming_key:
-        cleaned["api_key"] = incoming_key
-    else:
-        cleaned.pop("api_key", None)
+
+    credentials = cleaned.get("credentials")
+    if isinstance(credentials, dict):
+        sanitized_credentials = {}
+        for key, value in credentials.items():
+            text = str(value or "").strip()
+            if text:
+                sanitized_credentials[key] = text
+        cleaned["credentials"] = sanitized_credentials
+
     return cleaned
 
 
 def _redacted_config_dict(config: AppConfig) -> dict[str, Any]:
-    """Return config dictionary suitable for GUI responses without exposing API key."""
+    """Return config dictionary suitable for GUI responses without exposing API keys."""
     payload = config.to_dict()
-    payload["settings"]["api_key"] = ""
+    for field_name in payload["settings"]["credentials"]:
+        payload["settings"]["credentials"][field_name] = ""
     return payload
 
 
@@ -140,7 +179,7 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             _json_response(self, HTTPStatus.OK, {"ok": True, "config": config, "meta": self.server.state.metadata()})
             return
         if self.path == "/api/models":
-            self._handle_models(None)
+            self._handle_models({})
             return
 
         _json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found"})
@@ -168,7 +207,6 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
         if self.path == "/api/models":
             self._handle_models(payload)
             return
-
         if self.path == "/api/config":
             to_save = dict(payload)
             to_save["settings"] = _sanitize_settings_payload(payload.get("settings"))
@@ -179,7 +217,6 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
                 return
             _json_response(self, HTTPStatus.OK, {"ok": True, "config": updated, "meta": self.server.state.metadata()})
             return
-
         if self.path == "/api/test-connection":
             self._handle_test_connection(payload)
             return
@@ -229,11 +266,8 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
 
         thread_messages = normalize_chat_history(payload.get("thread_messages", []))
         config = self.server.state.get_config()
-
-        # Allow per-request overrides without mutating persisted server config.
-        settings_payload = _sanitize_settings_payload(payload.get("settings"))
         override_payload = {
-            "settings": settings_payload,
+            "settings": _sanitize_settings_payload(payload.get("settings")),
             "rules": payload.get("rules"),
             "rules_text": payload.get("rules_text"),
             "prompts": payload.get("prompts"),
@@ -261,9 +295,8 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
 
         thread_messages = normalize_chat_history(payload.get("thread_messages", []))
         config = self.server.state.get_config()
-        settings_payload = _sanitize_settings_payload(payload.get("settings"))
         override_payload = {
-            "settings": settings_payload,
+            "settings": _sanitize_settings_payload(payload.get("settings")),
             "rules": payload.get("rules"),
             "rules_text": payload.get("rules_text"),
             "prompts": payload.get("prompts"),
@@ -293,31 +326,31 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
             self.server.state.end_turn(turn_id)
 
     def _handle_test_connection(self, payload: dict[str, Any]) -> None:
-        """Run a lightweight OpenAI connectivity check with current/override settings."""
+        """Run a lightweight LiteLLM connectivity check with current/override settings."""
         base = self.server.state.get_config()
-        override_payload = {"settings": _sanitize_settings_payload(payload.get("settings"))}
-        runtime = merge_config(base, override_payload)
-        settings = runtime.settings
+        runtime = merge_config(base, {"settings": _sanitize_settings_payload(payload.get("settings"))})
+        role = _role_from_payload(payload)
+        endpoint = runtime.settings.writer if role == "writer" else runtime.settings.judge
+        credentials = runtime.settings.credentials
 
-        if not settings.api_key.strip():
+        if provider_requires_api_key(endpoint.provider) and not credentials.get_for_provider(endpoint.provider):
             _json_response(
                 self,
                 HTTPStatus.BAD_REQUEST,
-                {"ok": False, "error": "Missing API key. Enter one in Settings or set OPENAI_API_KEY."},
+                {"ok": False, "error": f"Missing credential for provider '{endpoint.provider}'."},
             )
             return
 
         try:
             result = chat_completion(
-                api_key=settings.api_key,
-                base_url=settings.base_url,
-                model=settings.writer_model,
+                endpoint=endpoint,
+                credentials=credentials,
                 messages=[{"role": "user", "content": "Reply with exactly: OK"}],
                 temperature=0.0,
                 max_tokens=8,
-                timeout_ms=settings.timeout_ms,
+                timeout_ms=runtime.settings.timeout_ms,
             )
-        except OpenAIAPIError as exc:
+        except LiteLLMAPIError as exc:
             _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001
@@ -331,8 +364,9 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "result": {
                     "message": "Connection successful.",
-                    "base_url": settings.base_url,
-                    "model": settings.writer_model,
+                    "provider": endpoint.provider,
+                    "model": endpoint.litellm_model(),
+                    "api_base": endpoint.api_base,
                     "response_preview": result.content[:120],
                 },
             },
@@ -341,25 +375,38 @@ class ConstitutionalHandler(BaseHTTPRequestHandler):
     def _handle_models(self, payload: dict[str, Any] | None) -> None:
         """List available models using current config and optional settings overrides."""
         base = self.server.state.get_config()
-        override_payload = {"settings": _sanitize_settings_payload(payload.get("settings"))} if isinstance(payload, dict) else {}
-        runtime = merge_config(base, override_payload)
-        settings = runtime.settings
-        if not settings.api_key.strip():
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Missing API key."})
-            return
-        try:
-            models = list_models(
-                api_key=settings.api_key,
-                base_url=settings.base_url,
-                timeout_ms=settings.timeout_ms,
+        runtime = merge_config(base, {"settings": _sanitize_settings_payload((payload or {}).get("settings"))})
+        role = _role_from_payload(payload or {})
+        endpoint = runtime.settings.writer if role == "writer" else runtime.settings.judge
+        credentials = runtime.settings.credentials
+
+        if provider_requires_api_key(endpoint.provider) and not credentials.get_for_provider(endpoint.provider):
+            _json_response(
+                self,
+                HTTPStatus.BAD_REQUEST,
+                {"ok": False, "error": f"Missing credential for provider '{endpoint.provider}'."},
             )
-        except OpenAIAPIError as exc:
+            return
+
+        try:
+            result = list_models(endpoint=endpoint, credentials=credentials, timeout_ms=runtime.settings.timeout_ms)
+        except LiteLLMAPIError as exc:
             _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001
             _json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"Model listing failed: {exc}"})
             return
-        _json_response(self, HTTPStatus.OK, {"ok": True, "models": models})
+
+        _json_response(
+            self,
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "provider": endpoint.provider,
+                "supports_listing": result.supports_listing,
+                "models": result.models,
+            },
+        )
 
 
 class ConstitutionalHTTPServer(ThreadingHTTPServer):

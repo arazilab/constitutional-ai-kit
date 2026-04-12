@@ -20,38 +20,185 @@ DEFAULT_RULES = [
     "Keep responses concise unless the user asks for depth.",
 ]
 
+PROVIDER_ENV_VARS = {
+    "openai_api_key": "OPENAI_API_KEY",
+    "anthropic_api_key": "ANTHROPIC_API_KEY",
+    "gemini_api_key": "GEMINI_API_KEY",
+    "xai_api_key": "XAI_API_KEY",
+    "openrouter_api_key": "OPENROUTER_API_KEY",
+    "groq_api_key": "GROQ_API_KEY",
+    "togetherai_api_key": "TOGETHERAI_API_KEY",
+    "huggingface_api_key": "HUGGINGFACE_API_KEY",
+    "azure_api_key": "AZURE_API_KEY",
+}
 
-def normalize_base_url(value: str) -> str:
-    """Normalize API base URL and reject malformed values."""
+PROVIDER_CREDENTIAL_FIELDS = {
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+    "gemini": "gemini_api_key",
+    "xai": "xai_api_key",
+    "openrouter": "openrouter_api_key",
+    "groq": "groq_api_key",
+    "togetherai": "togetherai_api_key",
+    "huggingface": "huggingface_api_key",
+    "azure": "azure_api_key",
+}
+
+PROVIDERS_WITH_OPTIONAL_KEYS = {"ollama", "lm_studio"}
+DEFAULT_PROVIDER = "openai"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+
+
+def normalize_api_base(value: str) -> str:
+    """Normalize optional API base URLs and reject malformed values."""
     raw = str(value or "").strip()
     if not raw:
-        raise ValueError("Invalid base_url: value is empty.")
+        return ""
 
     parsed = urlparse(raw)
     if parsed.scheme not in {"http", "https"}:
-        raise ValueError("Invalid base_url: must start with http:// or https://.")
+        raise ValueError("Invalid api_base: must start with http:// or https://.")
     if not parsed.netloc:
-        raise ValueError("Invalid base_url: missing hostname.")
+        raise ValueError("Invalid api_base: missing hostname.")
 
     path = parsed.path.rstrip("/")
-    # Accept either root base URLs or values ending in /v1 and normalize both.
-    while path.endswith("/v1"):
-        path = path[: -len("/v1")]
-        path = path.rstrip("/")
-    if "/v1/" in path:
-        raise ValueError("Invalid base_url: '/v1' may only appear at the end of the path.")
-
     return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+
+def normalize_provider(value: Any) -> str:
+    """Return a normalized LiteLLM provider id."""
+    provider = str(value or DEFAULT_PROVIDER).strip().lower().replace("-", "_")
+    if provider == "together":
+        return "togetherai"
+    if provider == "google":
+        return "gemini"
+    return provider or DEFAULT_PROVIDER
+
+
+def normalize_model_name(provider: str, value: Any) -> str:
+    """Normalize a stored model name while allowing advanced full model ids."""
+    provider = normalize_provider(provider)
+    model = str(value or "").strip()
+    if not model:
+        return DEFAULT_OPENAI_MODEL if provider == "openai" else ""
+    prefix = f"{provider}/"
+    if model.startswith(prefix):
+        return model[len(prefix) :]
+    return model
+
+
+def build_litellm_model(provider: str, model: str) -> str:
+    """Return the actual LiteLLM model string for a provider + model pair."""
+    normalized_provider = normalize_provider(provider)
+    normalized_model = str(model or "").strip()
+    if not normalized_model:
+        raise ValueError("Model is required.")
+    if "/" in normalized_model and normalized_model.split("/", 1)[0] in set(PROVIDER_CREDENTIAL_FIELDS) | PROVIDERS_WITH_OPTIONAL_KEYS:
+        return normalized_model
+    return f"{normalized_provider}/{normalized_model}"
+
+
+def provider_requires_api_key(provider: str) -> bool:
+    """Return True when the provider typically requires a credential."""
+    return normalize_provider(provider) not in PROVIDERS_WITH_OPTIONAL_KEYS
+
+
+def credential_field_for_provider(provider: str) -> str | None:
+    """Return the credentials field name used by a provider, if any."""
+    return PROVIDER_CREDENTIAL_FIELDS.get(normalize_provider(provider))
+
+
+@dataclass(slots=True)
+class ProviderCredentials:
+    """Saved provider-specific credentials for LiteLLM."""
+
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    xai_api_key: str = ""
+    openrouter_api_key: str = ""
+    groq_api_key: str = ""
+    togetherai_api_key: str = ""
+    huggingface_api_key: str = ""
+    azure_api_key: str = ""
+
+    @staticmethod
+    def from_mapping(value: dict[str, Any] | None) -> "ProviderCredentials":
+        value = value or {}
+        return ProviderCredentials(
+            openai_api_key=str(value.get("openai_api_key", "") or ""),
+            anthropic_api_key=str(value.get("anthropic_api_key", "") or ""),
+            gemini_api_key=str(value.get("gemini_api_key", "") or ""),
+            xai_api_key=str(value.get("xai_api_key", "") or ""),
+            openrouter_api_key=str(value.get("openrouter_api_key", "") or ""),
+            groq_api_key=str(value.get("groq_api_key", "") or ""),
+            togetherai_api_key=str(value.get("togetherai_api_key", "") or ""),
+            huggingface_api_key=str(value.get("huggingface_api_key", "") or ""),
+            azure_api_key=str(value.get("azure_api_key", "") or ""),
+        )
+
+    def get_for_provider(self, provider: str) -> str:
+        field_name = credential_field_for_provider(provider)
+        if not field_name:
+            return ""
+        return str(getattr(self, field_name, "") or "").strip()
+
+
+@dataclass(slots=True)
+class ModelSettings:
+    """One writer or judge endpoint configuration."""
+
+    provider: str = DEFAULT_PROVIDER
+    model: str = DEFAULT_OPENAI_MODEL
+    api_base: str = ""
+    api_version: str = ""
+
+    @staticmethod
+    def from_mapping(value: dict[str, Any] | None, *, default_provider: str = DEFAULT_PROVIDER) -> "ModelSettings":
+        value = value or {}
+        provider = normalize_provider(value.get("provider", default_provider))
+        return ModelSettings(
+            provider=provider,
+            model=normalize_model_name(provider, value.get("model", DEFAULT_OPENAI_MODEL if provider == "openai" else "")),
+            api_base=normalize_api_base(str(value.get("api_base", "") or "")),
+            api_version=str(value.get("api_version", "") or "").strip(),
+        )
+
+    def litellm_model(self) -> str:
+        return build_litellm_model(self.provider, self.model)
+
+
+def _migrate_legacy_role_model(raw_model: Any, provider: str) -> str:
+    """Convert prior OpenAI model strings into the new provider-aware model name."""
+    text = str(raw_model or "").strip()
+    if not text:
+        return DEFAULT_OPENAI_MODEL if normalize_provider(provider) == "openai" else ""
+    prefix = f"{normalize_provider(provider)}/"
+    if text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
+
+
+def _migrate_legacy_role_settings(settings: dict[str, Any], role_name: str) -> ModelSettings:
+    """Build a role config from either new nested settings or old flat keys."""
+    nested = settings.get(role_name)
+    if isinstance(nested, dict):
+        return ModelSettings.from_mapping(nested)
+
+    provider = DEFAULT_PROVIDER
+    api_base = normalize_api_base(str(settings.get("base_url", "") or ""))
+    model_key = f"{role_name}_model"
+    model = _migrate_legacy_role_model(settings.get(model_key, DEFAULT_OPENAI_MODEL), provider)
+    return ModelSettings(provider=provider, model=model, api_base=api_base, api_version="")
 
 
 @dataclass(slots=True)
 class RuntimeSettings:
-    """Runtime knobs used by the constitutional loop and model client."""
+    """Runtime knobs used by the constitutional loop and LiteLLM client."""
 
-    api_key: str = ""
-    base_url: str = "https://api.openai.com"
-    writer_model: str = "gpt-4o-mini"
-    judge_model: str = "gpt-4o-mini"
+    credentials: ProviderCredentials = field(default_factory=ProviderCredentials)
+    writer: ModelSettings = field(default_factory=ModelSettings)
+    judge: ModelSettings = field(default_factory=ModelSettings)
     temperature: float = 0.4
     max_tokens: int = 650
     max_revisions_per_rule: int = 1
@@ -68,11 +215,17 @@ class RuntimeSettings:
         if execution_mode not in {"sequential", "parallel"}:
             execution_mode = "sequential"
 
+        legacy_credentials = {}
+        legacy_api_key = str(value.get("api_key", "") or "").strip()
+        if legacy_api_key:
+            legacy_credentials["openai_api_key"] = legacy_api_key
+
         return RuntimeSettings(
-            api_key=str(value.get("api_key", "") or ""),
-            base_url=normalize_base_url(str(value.get("base_url", "https://api.openai.com") or "https://api.openai.com")),
-            writer_model=str(value.get("writer_model", "gpt-4o-mini") or "gpt-4o-mini"),
-            judge_model=str(value.get("judge_model", "gpt-4o-mini") or "gpt-4o-mini"),
+            credentials=ProviderCredentials.from_mapping(
+                {**legacy_credentials, **(value.get("credentials") if isinstance(value.get("credentials"), dict) else {})}
+            ),
+            writer=_migrate_legacy_role_settings(value, "writer"),
+            judge=_migrate_legacy_role_settings(value, "judge"),
             temperature=float(value.get("temperature", 0.4) or 0.4),
             max_tokens=int(value.get("max_tokens", 650) or 650),
             max_revisions_per_rule=int(value.get("max_revisions_per_rule", 1) or 1),
@@ -160,27 +313,36 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
-def get_api_key_source(path: str | Path | None = None) -> str:
-    """Return where the effective API key comes from: env, config, or none."""
-    env_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if env_key:
-        return "environment"
-
+def get_credential_sources(path: str | Path | None = None) -> dict[str, str]:
+    """Return where each effective provider credential comes from: env, config, or none."""
     cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
     payload = _read_json(cfg_path)
-    stored = ""
-    if isinstance(payload.get("settings"), dict):
-        stored = str(payload["settings"].get("api_key", "") or "").strip()
-    return "config" if stored else "none"
+    config_credentials = {}
+    if isinstance(payload.get("settings"), dict) and isinstance(payload["settings"].get("credentials"), dict):
+        config_credentials = payload["settings"]["credentials"]
+    elif isinstance(payload.get("settings"), dict) and str(payload["settings"].get("api_key", "") or "").strip():
+        config_credentials = {"openai_api_key": str(payload["settings"].get("api_key", "") or "").strip()}
+
+    sources: dict[str, str] = {}
+    for field_name, env_var in PROVIDER_ENV_VARS.items():
+        env_value = os.getenv(env_var, "").strip()
+        if env_value:
+            sources[field_name] = "environment"
+        elif str(config_credentials.get(field_name, "") or "").strip():
+            sources[field_name] = "config"
+        else:
+            sources[field_name] = "none"
+    return sources
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
-    """Load config from disk and overlay environment-sourced API key."""
+    """Load config from disk and overlay environment-sourced provider credentials."""
     cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
     base = AppConfig.from_mapping(_read_json(cfg_path))
-    env_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if env_key:
-        base.settings.api_key = env_key
+    for field_name, env_var in PROVIDER_ENV_VARS.items():
+        env_value = os.getenv(env_var, "").strip()
+        if env_value:
+            setattr(base.settings.credentials, field_name, env_value)
     return base
 
 

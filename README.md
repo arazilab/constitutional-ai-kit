@@ -1,12 +1,12 @@
-# Constitutional AI Package (CLI + GUI + Notebook)
+# Constitutional AI Package
 
-A Python package for constitutional AI with one shared engine across:
+One shared constitutional AI engine with three interfaces:
 
 - CLI
-- Local HTML GUI
-- Python scripts and notebooks
+- local GUI
+- Python scripts / notebooks
 
-This repo also includes `README.llm`, a structured machine-oriented companion doc for LLMs/coding agents.
+The model layer now uses [LiteLLM](https://github.com/BerriAI/litellm), with OpenAI as the default configuration and support for other providers such as Anthropic, Gemini, xAI, OpenRouter, Groq, Together AI, Hugging Face, Azure OpenAI, and local providers like Ollama or LM Studio.
 
 ## Install
 
@@ -17,50 +17,32 @@ pip install -e .
 ```
 
 Python requirement: `>=3.10`
-Runtime dependency installed with package: `certifi` (for CA bundle handling).
 
-### Notebook environments (Colab / Jupyter)
+## Quick start
 
-If you installed with editable mode (`pip install -e .`) and imports fail in a notebook with:
+### 1. Configure credentials
 
-```text
-ModuleNotFoundError: No module named 'constitutional_ai'
-```
+You can use either environment variables or the shared config / GUI.
 
-add the repository `src` directory to Python's path before imports:
-
-```python
-import sys
-sys.path.insert(0, "/content/repo/src")
-```
-
-Then imports work normally:
-
-```python
-from constitutional_ai.config import load_config
-from constitutional_ai.engine import run_constitutional_turn
-from constitutional_ai.models import ChatMessage
-```
-
-This can happen in some notebook kernels with editable installs and `src` layout projects.
-
-For Colab/Jupyter, a reliable alternative is:
-
-```bash
-pip install .
-```
-
-instead of editable mode.
-
-## Quick Start
-
-### 1. Set API key
+OpenAI example:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
 
-### 2. Run CLI
+Anthropic example:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Gemini example:
+
+```bash
+export GEMINI_API_KEY="AIza..."
+```
+
+### 2. Run the CLI
 
 Single turn:
 
@@ -68,6 +50,18 @@ Single turn:
 constitutional-ai run --prompt "What is constitutional AI?"
 constitutional-ai run --prompt "What is constitutional AI?" --execution-mode parallel --parallel-max-iterations 1
 constitutional-ai run --prompt "What is constitutional AI?" --show-metrics
+```
+
+Use a non-default provider:
+
+```bash
+constitutional-ai run \
+  --prompt "Summarize constitutional AI" \
+  --writer-provider anthropic \
+  --writer-model claude-sonnet-4-5-20250929 \
+  --judge-provider openai \
+  --judge-model gpt-4o-mini \
+  --anthropic-api-key "$ANTHROPIC_API_KEY"
 ```
 
 Interactive chat:
@@ -78,17 +72,15 @@ constitutional-ai chat --execution-mode sequential
 constitutional-ai chat --show-metrics
 ```
 
-### 3. Run GUI
+### 3. Run the GUI
 
-**Recommended (easiest, non-technical):**
+Recommended:
 
 ```bash
 python3 launch_gui.py
 ```
 
-This automatically creates a local virtual environment, installs dependencies, and starts the GUI.
-
-Alternative (if you already installed the package yourself):
+Alternative:
 
 ```bash
 constitutional-ai-gui
@@ -96,12 +88,17 @@ constitutional-ai-gui
 
 Open [http://127.0.0.1:8765](http://127.0.0.1:8765) if it does not auto-open.
 
-On first run, the GUI auto-creates a starter config file and opens Settings if required setup (like API key) is missing.
-In Settings, writer/judge model fields are dropdowns populated from live `/v1/models`.
+The GUI keeps one top-level `Settings` tab and uses an internal left navigation for:
 
-## Use in Your Own Python Script
+- credentials
+- writer model
+- judge model
+- runtime parameters
+- system prompts
 
-After cloning and installing this repo, any Python script can import the package:
+When LiteLLM supports provider-side model discovery, the GUI uses a dropdown populated from `get_valid_models(check_provider_endpoint=True)`. Otherwise it falls back to manual text entry.
+
+## Use in Python
 
 ```python
 from constitutional_ai.config import load_config
@@ -109,20 +106,24 @@ from constitutional_ai.engine import run_constitutional_turn
 from constitutional_ai.models import ChatMessage
 
 config = load_config()
-thread = [ChatMessage(role="user", content="Summarize constitutional AI in 3 bullets.")]
-turn = run_constitutional_turn(user_text=thread[-1].content, thread_messages=thread, config=config)
+thread = [ChatMessage(role="user", content="Explain constitutional AI in 3 bullets.")]
+
+turn = run_constitutional_turn(
+    user_text=thread[-1].content,
+    thread_messages=thread,
+    config=config,
+)
+
 print(turn.final)
 ```
 
-This uses the same engine and config model as the CLI and GUI.
-
-## Shared Config
+## Shared config
 
 Default path:
 
 - `~/.constitutional_ai/config.json`
 
-Create starter config (optional, GUI auto-creates it if missing):
+Create starter config:
 
 ```bash
 constitutional-ai config init
@@ -137,30 +138,12 @@ constitutional-ai config show --redact-key
 Set config values without editing JSON directly:
 
 ```bash
-# Set string values
-constitutional-ai config set --key settings.writer_model --value gpt-4o-mini
-
-# Set typed values with JSON
+constitutional-ai config set --key settings.writer.provider --value anthropic
+constitutional-ai config set --key settings.writer.model --value claude-sonnet-4-5-20250929
+constitutional-ai config set --key settings.judge.provider --value openai
+constitutional-ai config set --key settings.judge.model --value gpt-4o-mini
 constitutional-ai config set --key settings.temperature --json-value 0.2
-constitutional-ai config set --key settings.parallel_max_iterations --json-value 1
-constitutional-ai config set --key rules --json-value '["Be concise.","Cite uncertainty clearly."]'
-constitutional-ai config set --key prompts.writer_system --value "You are a concise assistant."
-```
-
-Update config from scripts/notebooks:
-
-```python
-from constitutional_ai.config import load_config, save_config, set_config_value, update_config_value
-
-# One-shot update + save (uses default config path unless provided)
-update_config_value(None, "settings.execution_mode", "parallel")
-update_config_value(None, "settings.parallel_max_iterations", 1)
-
-# In-memory batch updates, then save once
-cfg = load_config()
-cfg = set_config_value(cfg, "settings.temperature", 0.2)
-cfg = set_config_value(cfg, "settings.max_tokens", 700)
-save_config(cfg)
+constitutional-ai config set --key settings.credentials.openai_api_key --value "sk-..."
 ```
 
 Config shape:
@@ -168,10 +151,29 @@ Config shape:
 ```json
 {
   "settings": {
-    "api_key": "",
-    "base_url": "https://api.openai.com",
-    "writer_model": "gpt-4o-mini",
-    "judge_model": "gpt-4o-mini",
+    "credentials": {
+      "openai_api_key": "",
+      "anthropic_api_key": "",
+      "gemini_api_key": "",
+      "xai_api_key": "",
+      "openrouter_api_key": "",
+      "groq_api_key": "",
+      "togetherai_api_key": "",
+      "huggingface_api_key": "",
+      "azure_api_key": ""
+    },
+    "writer": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "api_base": "",
+      "api_version": ""
+    },
+    "judge": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "api_base": "",
+      "api_version": ""
+    },
     "temperature": 0.4,
     "max_tokens": 650,
     "max_revisions_per_rule": 1,
@@ -189,82 +191,31 @@ Config shape:
 }
 ```
 
-The GUI reads and writes this same config via `/api/config`.
+Notes:
 
-`base_url` is normalized and validated (supports both `https://api.openai.com` and `https://api.openai.com/v1` as input).
-
-For request-path debugging, set:
-
-```bash
-export CONSTITUTIONAL_AI_DEBUG=1
-```
-
-This logs final request URLs without exposing API keys.
-
-TLS note:
-- The shared client uses system certificates, supports `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and will use `certifi` automatically when available.
-
-Transcript note:
-- Turn transcripts now include `run.events` timeline entries, including initial draft stage and sequential/parallel stage progress.
-- Turn transcripts include `duration_ms`, so GUI/CLI/Python can all inspect elapsed turn time.
-- `max_iteration_ms` can stop long runs and return the latest revision (`0` means no limit).
-- GUI transcript now shows both `critique` and `required_fixes` for failed rules.
-- In parallel mode, GUI transcript groups checks by iteration, then by rules within each iteration.
-
-Revision guidance note:
-- Default prompts now require `required_fixes` to be actionable (explicitly what to change and how).
-- Writer revisions treat `required_fixes` as mandatory in both sequential and parallel modes.
-
-Model validation note:
-- Before each turn, writer/judge model names are validated against the live model list.
-- If a model is invalid, the error includes the available model IDs.
+- Old OpenAI-only configs are migrated on load into the new structure.
+- Environment variables override saved credentials for the matching provider.
+- `api_base` is optional and works for custom endpoints or local servers.
+- Writer and judge are configured independently.
 
 ## Examples
 
-See the [examples](./examples) folder for scenario-based examples with separate READMEs:
+See [examples](./examples):
 
-- different model choices
-- multi-turn history handling
-- different constitutions for different tasks
-- parallel judge/critic execution mode with iteration cap controls
-- single-turn minimal script usage
+- `basic_single_turn/`
+- `model_variants/`
+- `history_management/`
+- `constitution_variants/`
+- `parallel_mode/`
 
-## LLM-Oriented Docs
+## Notes
 
-- `README.llm` is a structured guide for coding agents (rules, signatures, examples).
-- Keep `README.md` and `README.llm` updated together after each code edit so both reflect the latest behavior.
-- Core invariant for contributors and agents: one shared backend core, multiple interfaces (CLI/GUI/scripts), no split backends.
+- Turn transcripts include run-stage events, token usage, duration, judge critiques, and required fixes.
+- `max_iteration_ms` can stop long runs and return the latest revision.
+- The engine no longer blocks execution on provider-side model listing; manual model entry works for unsupported providers and local models.
+- Do not commit API keys. The tracked default config has been cleaned to remove embedded credentials.
 
-### Prompt Example For LLMs
+## LLM-oriented docs
 
-You can paste this template into an LLM prompt when requesting repo changes:
-
-```text
-Read `README.llm` in this repository and follow it strictly.
-
-Task:
-<describe the change>
-
-Constraints:
-1) Keep one shared backend core (`src/constitutional_ai/engine.py` + shared config/client layers).
-2) Do not implement separate constitutional-processing logic for CLI vs GUI vs scripts.
-3) If behavior changes, update both README.md and README.llm.
-4) Reuse existing public APIs and provide minimal validation steps.
-```
-
-## Local API Endpoints (GUI server)
-
-- `GET /` -> GUI
-- `GET /api/config` -> current shared config
-- `POST /api/config` -> merge and persist shared config
-- `POST /api/test-connection` -> validate key/base URL/model connectivity from Settings
-- `POST /api/models` -> list available models for GUI dropdowns
-- `POST /api/turn-stream` -> run one turn and stream progress events (used by GUI status pill)
-- `POST /api/turn-cancel` -> request cancellation of an active streamed turn
-- `POST /api/turn` -> run one constitutional turn
-
-## Security Notes
-
-- Prefer `OPENAI_API_KEY` environment variable over storing keys in files.
-- If you store API keys in config, treat `~/.constitutional_ai/config.json` as sensitive.
-- GUI server binds to local host by default (`127.0.0.1`).
+- `README.llm` is the structured repo companion for coding agents.
+- Keep `README.md` and `README.llm` aligned after interface or config changes.

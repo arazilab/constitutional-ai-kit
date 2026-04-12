@@ -7,28 +7,34 @@
     <style>
       :root {
         color-scheme: light dark;
-        --bg: #0b0d10;
-        --panel: #12161c;
-        --panel2: #0f1318;
-        --text: #e8eef7;
-        --muted: #aab6c5;
-        --border: #232b35;
-        --accent: #66b3ff;
-        --danger: #ff6b6b;
-        --ok: #3ddc97;
-        --radius: 14px;
+        --bg: #f4f1ea;
+        --panel: #fffdf8;
+        --panel2: #f7f1e7;
+        --panel3: #efe6d8;
+        --text: #211c16;
+        --muted: #6f6356;
+        --border: #d8c7af;
+        --accent: #9e4d2d;
+        --accent-soft: rgba(158, 77, 45, 0.12);
+        --danger: #b42318;
+        --ok: #146c43;
+        --shadow: 0 18px 45px rgba(68, 41, 20, 0.08);
+        --radius: 18px;
       }
-      @media (prefers-color-scheme: light) {
+      @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #f6f7fb;
-          --panel: #ffffff;
-          --panel2: #fafbff;
-          --text: #0a0f18;
-          --muted: #4b5a70;
-          --border: #d7deea;
-          --accent: #0b63ff;
-          --danger: #d61f2c;
-          --ok: #087f5b;
+          --bg: #17120d;
+          --panel: #211913;
+          --panel2: #2a2018;
+          --panel3: #34271e;
+          --text: #f8f1e8;
+          --muted: #c6b7a5;
+          --border: #4a392d;
+          --accent: #f28d5b;
+          --accent-soft: rgba(242, 141, 91, 0.14);
+          --danger: #ff8a80;
+          --ok: #5dd39e;
+          --shadow: none;
         }
       }
       * {
@@ -36,29 +42,33 @@
       }
       body {
         margin: 0;
-        background: var(--bg);
+        background:
+          radial-gradient(circle at top left, rgba(242, 141, 91, 0.14), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(103, 164, 255, 0.08), transparent 30%),
+          var(--bg);
         color: var(--text);
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
       }
       .wrap {
-        max-width: 1180px;
+        max-width: 1240px;
         margin: 0 auto;
-        padding: 16px;
+        padding: 18px;
       }
       header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 14px;
       }
       h1 {
-        font-size: 18px;
+        font-size: 24px;
         margin: 0;
       }
       .subtitle {
         color: var(--muted);
-        font-size: 12px;
+        font-size: 13px;
+        line-height: 1.4;
       }
       nav {
         display: flex;
@@ -66,26 +76,30 @@
         flex-wrap: wrap;
       }
       .tab,
-      .btn {
+      .btn,
+      .settingsNavButton {
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--panel2);
         color: var(--text);
-        border-radius: 10px;
+        border-radius: 12px;
         cursor: pointer;
-        padding: 8px 10px;
+        padding: 9px 12px;
         font-size: 13px;
       }
-      .tab[aria-selected="true"] {
+      .tab[aria-selected="true"],
+      .settingsNavButton[aria-selected="true"] {
         border-color: var(--accent);
+        background: var(--accent-soft);
       }
       .btn.primary {
         border-color: var(--accent);
-        background: rgba(102, 179, 255, 0.15);
+        background: var(--accent-soft);
       }
       .btn.danger {
-        border-color: rgba(255, 107, 107, 0.4);
+        border-color: rgba(180, 35, 24, 0.45);
       }
-      .page[hidden] {
+      .page[hidden],
+      .settingsPanel[hidden] {
         display: none;
       }
       .card {
@@ -93,18 +107,19 @@
         border-radius: var(--radius);
         background: var(--panel);
         overflow: hidden;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
+        box-shadow: var(--shadow);
       }
       .cardHead {
         border-bottom: 1px solid var(--border);
-        padding: 10px 12px;
+        padding: 12px 14px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 10px;
       }
       .cardBody {
-        padding: 12px;
+        padding: 14px;
       }
       .row {
         display: flex;
@@ -115,44 +130,77 @@
       .grid {
         display: grid;
         grid-template-columns: 1.2fr 0.8fr;
+        gap: 14px;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 12px;
       }
-      @media (max-width: 960px) {
-        .grid {
-          grid-template-columns: 1fr;
-        }
+      .settingsShell {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 16px;
+      }
+      .settingsNav {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .settingsNavButton {
+        text-align: left;
+      }
+      .settingsPanelCard {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--panel2);
+        padding: 14px;
+      }
+      .settingsPanelTitle {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+      .settingsPanelBody {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .fieldGroup {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
       textarea,
       input,
       select {
         width: 100%;
         border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--panel2);
+        border-radius: 12px;
+        background: var(--panel);
         color: var(--text);
-        padding: 9px 10px;
+        padding: 10px 11px;
         font: inherit;
       }
       textarea {
-        min-height: 95px;
+        min-height: 105px;
         resize: vertical;
       }
       .msgList {
         display: flex;
         flex-direction: column;
-        gap: 9px;
+        gap: 10px;
       }
       .msg {
         border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 8px 10px;
-        background: rgba(255, 255, 255, 0.02);
+        border-radius: 14px;
+        padding: 9px 11px;
+        background: rgba(255, 255, 255, 0.03);
       }
       .msg.user {
-        border-color: rgba(102, 179, 255, 0.35);
+        border-color: rgba(158, 77, 45, 0.35);
       }
       .msg.assistant {
-        border-color: rgba(61, 220, 151, 0.35);
+        border-color: rgba(20, 108, 67, 0.35);
       }
       .meta {
         color: var(--muted);
@@ -163,13 +211,13 @@
       }
       .content {
         white-space: pre-wrap;
-        line-height: 1.35;
+        line-height: 1.45;
       }
       .pill {
         border: 1px solid var(--border);
         color: var(--muted);
         border-radius: 999px;
-        padding: 5px 8px;
+        padding: 5px 9px;
         font-size: 12px;
       }
       .pill.ok {
@@ -181,11 +229,11 @@
       .small {
         color: var(--muted);
         font-size: 12px;
-        line-height: 1.4;
+        line-height: 1.45;
       }
       details {
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: 12px;
         background: rgba(255, 255, 255, 0.02);
         padding: 8px;
       }
@@ -193,14 +241,22 @@
         cursor: pointer;
         font-size: 13px;
       }
-      .split {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
-      @media (max-width: 960px) {
-        .split {
+      .hidden {
+        display: none !important;
+      }
+      @media (max-width: 980px) {
+        .grid,
+        .split,
+        .settingsShell {
           grid-template-columns: 1fr;
+        }
+        header {
+          flex-direction: column;
         }
       }
     </style>
@@ -209,8 +265,8 @@
     <div class="wrap">
       <header>
         <div>
-          <h1>Constitutional AI Package</h1>
-          <div class="subtitle">GUI and CLI share one Python engine + one config</div>
+          <h1>Constitutional AI</h1>
+          <div class="subtitle">LiteLLM-backed writer and judge routing with shared GUI, CLI, and config.</div>
         </div>
         <nav>
           <button class="tab" data-page="chat" aria-selected="true">Chat</button>
@@ -248,11 +304,12 @@
             <div class="cardBody">
               <div class="row">
                 <span class="pill" id="pill-rules">rules: 0</span>
-                <span class="pill" id="pill-key">api key: missing</span>
+                <span class="pill" id="pill-writer">writer: incomplete</span>
+                <span class="pill" id="pill-judge">judge: incomplete</span>
               </div>
               <div class="small" style="margin-top: 8px">
-                The GUI sends each turn to the Python engine on this server. Use Save config to persist shared preferences
-                for CLI and notebooks.
+                The GUI sends each turn to the Python engine running on this server. Save config persists settings for CLI
+                and example scripts.
               </div>
               <div style="margin-top: 10px">
                 <button id="btn-reload-config" class="btn">Reload config from server</button>
@@ -272,7 +329,7 @@
             </div>
           </div>
           <div class="cardBody">
-            <div class="small">One rule per line. These rules are shared across GUI, CLI, and notebooks.</div>
+            <div class="small">One rule per line. These rules are shared across GUI, CLI, and examples.</div>
             <textarea id="rules-text"></textarea>
           </div>
         </div>
@@ -281,95 +338,226 @@
       <section class="page" id="page-settings" hidden>
         <div class="card">
           <div class="cardHead">
-            <strong>Runtime settings + prompts</strong>
+            <strong>Settings</strong>
             <div class="row">
               <button id="btn-save-settings" class="btn primary">Save</button>
               <button id="btn-reset-settings" class="btn">Reset defaults</button>
             </div>
           </div>
           <div class="cardBody">
-            <div id="setup-banner" class="small" style="margin-bottom: 10px" hidden>
-              Setup required: add an API key, save settings, then start chatting.
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-api-key">API key</label>
-                <input id="set-api-key" type="password" placeholder="sk-..." />
-                <div class="row" style="margin-top: 6px">
-                  <button id="btn-toggle-api-key" class="btn" type="button">Reveal</button>
-                  <button id="btn-test-connection" class="btn" type="button">Test connection</button>
-                </div>
-                <div id="api-key-source" class="small" style="margin-top: 6px"></div>
-                <div class="small">Save settings writes values to your local shared config file.</div>
+            <div id="setup-banner" class="small" style="margin-bottom: 14px" hidden></div>
+            <div class="settingsShell">
+              <div class="settingsNav">
+                <button class="settingsNavButton" data-settings-section="credentials" aria-selected="true">Credentials</button>
+                <button class="settingsNavButton" data-settings-section="writer" aria-selected="false">Writer model</button>
+                <button class="settingsNavButton" data-settings-section="judge" aria-selected="false">Judge model</button>
+                <button class="settingsNavButton" data-settings-section="parameters" aria-selected="false">Parameters</button>
+                <button class="settingsNavButton" data-settings-section="prompts" aria-selected="false">System prompts</button>
               </div>
               <div>
-                <label class="small" for="set-base-url">Base URL</label>
-                <input id="set-base-url" type="text" />
-                <div id="test-connection-result" class="small" style="margin-top: 6px"></div>
-              </div>
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-writer-model">Writer model</label>
-                <select id="set-writer-model"></select>
-              </div>
-              <div>
-                <label class="small" for="set-judge-model">Judge model</label>
-                <select id="set-judge-model"></select>
-                <div class="row" style="margin-top: 6px">
-                  <button id="btn-refresh-models" class="btn" type="button">Refresh models</button>
-                </div>
-              </div>
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-temperature">Temperature</label>
-                <input id="set-temperature" type="number" min="0" max="2" step="0.1" />
-              </div>
-              <div>
-                <label class="small" for="set-max-tokens">Max tokens</label>
-                <input id="set-max-tokens" type="number" min="64" step="64" />
-              </div>
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-max-revisions">Max revisions per rule</label>
-                <input id="set-max-revisions" type="number" min="0" step="1" />
-              </div>
-              <div>
-                <label class="small" for="set-timeout-ms">Timeout (ms)</label>
-                <input id="set-timeout-ms" type="number" min="1000" step="500" />
-              </div>
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-max-iteration-ms">Max iteration time (ms)</label>
-                <input id="set-max-iteration-ms" type="number" min="0" step="100" />
-                <div class="small">0 means no time limit.</div>
-              </div>
-              <div></div>
-            </div>
-            <div class="split">
-              <div>
-                <label class="small" for="set-execution-mode">Execution mode</label>
-                <select id="set-execution-mode">
-                  <option value="sequential">Sequential</option>
-                  <option value="parallel">Parallel</option>
-                </select>
-              </div>
-              <div>
-                <label class="small" for="set-parallel-max-iterations">Parallel max iterations</label>
-                <input id="set-parallel-max-iterations" type="number" min="0" step="1" />
-                <div class="small">0 means keep iterating until no rules are triggered.</div>
-              </div>
-            </div>
+                <section class="settingsPanel" id="settings-panel-credentials">
+                  <div class="settingsPanelCard">
+                    <h2 class="settingsPanelTitle">Provider credentials</h2>
+                    <div class="small">Leave a field blank to keep the saved value or use an environment variable instead.</div>
+                    <div class="settingsPanelBody" style="margin-top: 12px">
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-openai">OpenAI API key</label>
+                          <input id="cred-openai" type="password" placeholder="sk-..." />
+                          <div id="cred-openai-source" class="small"></div>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-anthropic">Anthropic API key</label>
+                          <input id="cred-anthropic" type="password" placeholder="sk-ant-..." />
+                          <div id="cred-anthropic-source" class="small"></div>
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-gemini">Gemini API key</label>
+                          <input id="cred-gemini" type="password" placeholder="AIza..." />
+                          <div id="cred-gemini-source" class="small"></div>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-xai">xAI API key</label>
+                          <input id="cred-xai" type="password" placeholder="xai-..." />
+                          <div id="cred-xai-source" class="small"></div>
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-openrouter">OpenRouter API key</label>
+                          <input id="cred-openrouter" type="password" />
+                          <div id="cred-openrouter-source" class="small"></div>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-groq">Groq API key</label>
+                          <input id="cred-groq" type="password" />
+                          <div id="cred-groq-source" class="small"></div>
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-togetherai">Together AI API key</label>
+                          <input id="cred-togetherai" type="password" />
+                          <div id="cred-togetherai-source" class="small"></div>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-huggingface">Hugging Face API key</label>
+                          <input id="cred-huggingface" type="password" />
+                          <div id="cred-huggingface-source" class="small"></div>
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="cred-azure">Azure OpenAI API key</label>
+                          <input id="cred-azure" type="password" />
+                          <div id="cred-azure-source" class="small"></div>
+                        </div>
+                        <div class="fieldGroup"></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
 
-            <label class="small" for="prompt-writer">Writer system prompt</label>
-            <textarea id="prompt-writer"></textarea>
-            <label class="small" for="prompt-pass">Judge pass system prompt</label>
-            <textarea id="prompt-pass"></textarea>
-            <label class="small" for="prompt-critique">Judge critique system prompt</label>
-            <textarea id="prompt-critique"></textarea>
+                <section class="settingsPanel" id="settings-panel-writer" hidden>
+                  <div class="settingsPanelCard">
+                    <h2 class="settingsPanelTitle">Writer model</h2>
+                    <div class="small">Choose the provider, then refresh models when LiteLLM supports provider-side discovery.</div>
+                    <div class="settingsPanelBody" style="margin-top: 12px">
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="writer-provider">Provider</label>
+                          <select id="writer-provider"></select>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="writer-api-version">API version</label>
+                          <input id="writer-api-version" type="text" placeholder="Optional, mainly for Azure" />
+                        </div>
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="writer-api-base">API base</label>
+                        <input id="writer-api-base" type="text" placeholder="Optional endpoint override" />
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="writer-model-select">Model</label>
+                        <select id="writer-model-select"></select>
+                        <input id="writer-model-input" class="hidden" type="text" placeholder="Enter a LiteLLM model name" />
+                        <div id="writer-model-status" class="small"></div>
+                      </div>
+                      <div class="row">
+                        <button id="btn-writer-refresh-models" class="btn" type="button">Refresh models</button>
+                        <button id="btn-writer-test-connection" class="btn" type="button">Test connection</button>
+                      </div>
+                      <div id="writer-test-result" class="small"></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settingsPanel" id="settings-panel-judge" hidden>
+                  <div class="settingsPanelCard">
+                    <h2 class="settingsPanelTitle">Judge model</h2>
+                    <div class="small">Judge and writer are configured independently and can use different providers.</div>
+                    <div class="settingsPanelBody" style="margin-top: 12px">
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="judge-provider">Provider</label>
+                          <select id="judge-provider"></select>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="judge-api-version">API version</label>
+                          <input id="judge-api-version" type="text" placeholder="Optional, mainly for Azure" />
+                        </div>
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="judge-api-base">API base</label>
+                        <input id="judge-api-base" type="text" placeholder="Optional endpoint override" />
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="judge-model-select">Model</label>
+                        <select id="judge-model-select"></select>
+                        <input id="judge-model-input" class="hidden" type="text" placeholder="Enter a LiteLLM model name" />
+                        <div id="judge-model-status" class="small"></div>
+                      </div>
+                      <div class="row">
+                        <button id="btn-judge-refresh-models" class="btn" type="button">Refresh models</button>
+                        <button id="btn-judge-test-connection" class="btn" type="button">Test connection</button>
+                      </div>
+                      <div id="judge-test-result" class="small"></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settingsPanel" id="settings-panel-parameters" hidden>
+                  <div class="settingsPanelCard">
+                    <h2 class="settingsPanelTitle">Runtime parameters</h2>
+                    <div class="settingsPanelBody">
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="set-temperature">Temperature</label>
+                          <input id="set-temperature" type="number" min="0" max="2" step="0.1" />
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="set-max-tokens">Max tokens</label>
+                          <input id="set-max-tokens" type="number" min="1" step="1" />
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="set-max-revisions">Max revisions per rule</label>
+                          <input id="set-max-revisions" type="number" min="0" step="1" />
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="set-timeout-ms">Timeout (ms)</label>
+                          <input id="set-timeout-ms" type="number" min="1000" step="500" />
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="set-execution-mode">Execution mode</label>
+                          <select id="set-execution-mode">
+                            <option value="sequential">Sequential</option>
+                            <option value="parallel">Parallel</option>
+                          </select>
+                        </div>
+                        <div class="fieldGroup">
+                          <label class="small" for="set-parallel-max-iterations">Parallel max iterations</label>
+                          <input id="set-parallel-max-iterations" type="number" min="0" step="1" />
+                        </div>
+                      </div>
+                      <div class="split">
+                        <div class="fieldGroup">
+                          <label class="small" for="set-max-iteration-ms">Max iteration time (ms)</label>
+                          <input id="set-max-iteration-ms" type="number" min="0" step="100" />
+                          <div class="small">0 means no time limit.</div>
+                        </div>
+                        <div class="fieldGroup"></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settingsPanel" id="settings-panel-prompts" hidden>
+                  <div class="settingsPanelCard">
+                    <h2 class="settingsPanelTitle">System prompts</h2>
+                    <div class="settingsPanelBody">
+                      <div class="fieldGroup">
+                        <label class="small" for="prompt-writer">Writer system prompt</label>
+                        <textarea id="prompt-writer"></textarea>
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="prompt-pass">Judge pass system prompt</label>
+                        <textarea id="prompt-pass"></textarea>
+                      </div>
+                      <div class="fieldGroup">
+                        <label class="small" for="prompt-critique">Judge critique system prompt</label>
+                        <textarea id="prompt-critique"></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
           </div>
         </div>
       </section>

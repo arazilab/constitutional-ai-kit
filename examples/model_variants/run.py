@@ -1,4 +1,4 @@
-"""Compare outputs across different writer/judge model pairs."""
+"""Compare outputs across different LiteLLM writer/judge model pairs."""
 
 from constitutional_ai.config import load_config, merge_config
 from constitutional_ai.engine import run_constitutional_turn
@@ -6,8 +6,14 @@ from constitutional_ai.models import ChatMessage
 
 
 MODEL_PAIRS = [
-    ("gpt-4o-mini", "gpt-4o-mini"),
-    ("gpt-4o", "gpt-4o-mini"),
+    (
+        {"provider": "openai", "model": "gpt-4o-mini"},
+        {"provider": "openai", "model": "gpt-4o-mini"},
+    ),
+    (
+        {"provider": "openai", "model": "gpt-4o-mini"},
+        {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+    ),
 ]
 
 
@@ -16,13 +22,13 @@ def main() -> None:
     base_config = load_config()
     user_text = "Draft a concise onboarding checklist for a new data scientist."
 
-    for writer_model, judge_model in MODEL_PAIRS:
+    for writer_settings, judge_settings in MODEL_PAIRS:
         config = merge_config(
             base_config,
             {
                 "settings": {
-                    "writer_model": writer_model,
-                    "judge_model": judge_model,
+                    "writer": writer_settings,
+                    "judge": judge_settings,
                 }
             },
         )
@@ -34,7 +40,11 @@ def main() -> None:
             config=config,
         )
 
-        print(f"\n=== writer={writer_model} | judge={judge_model} ===")
+        print(
+            "\n=== "
+            f"writer={writer_settings['provider']}/{writer_settings['model']} | "
+            f"judge={judge_settings['provider']}/{judge_settings['model']} ==="
+        )
         print(turn.final)
 
 

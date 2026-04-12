@@ -8,6 +8,13 @@ From repository root:
 
 ```bash
 pip install -e .
+```
+
+Then configure at least one provider credential through environment variables or `~/.constitutional_ai/config.json`.
+
+Example:
+
+```bash
 export OPENAI_API_KEY="sk-..."
 ```
 

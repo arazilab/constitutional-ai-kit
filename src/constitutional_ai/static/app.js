@@ -1,23 +1,49 @@
 "use strict";
 
-/** Storage keys for local-only UI state. */
 const STORAGE = {
-  chat: "constitutional_ai.chat.v1",
-  transcript: "constitutional_ai.transcript.v1",
+  chat: "constitutional_ai.chat.v2",
+  transcript: "constitutional_ai.transcript.v2",
 };
 
-/** In-memory application state. */
+const PROVIDERS = [
+  { id: "openai", label: "OpenAI", credential: "openai_api_key", requiresKey: true, defaultModel: "gpt-4o-mini" },
+  { id: "anthropic", label: "Anthropic", credential: "anthropic_api_key", requiresKey: true, defaultModel: "claude-sonnet-4-5-20250929" },
+  { id: "gemini", label: "Gemini", credential: "gemini_api_key", requiresKey: true, defaultModel: "gemini-2.5-flash" },
+  { id: "xai", label: "xAI", credential: "xai_api_key", requiresKey: true, defaultModel: "grok-2-latest" },
+  { id: "openrouter", label: "OpenRouter", credential: "openrouter_api_key", requiresKey: true, defaultModel: "openai/gpt-4o-mini" },
+  { id: "groq", label: "Groq", credential: "groq_api_key", requiresKey: true, defaultModel: "llama-3.3-70b-versatile" },
+  { id: "togetherai", label: "Together AI", credential: "togetherai_api_key", requiresKey: true, defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+  { id: "huggingface", label: "Hugging Face", credential: "huggingface_api_key", requiresKey: true, defaultModel: "meta-llama/Meta-Llama-3.1-8B-Instruct" },
+  { id: "azure", label: "Azure OpenAI", credential: "azure_api_key", requiresKey: true, defaultModel: "gpt-4o-mini" },
+  { id: "ollama", label: "Ollama", credential: null, requiresKey: false, defaultModel: "llama3.2" },
+  { id: "lm_studio", label: "LM Studio", credential: null, requiresKey: false, defaultModel: "local-model" },
+];
+
+const CREDENTIAL_INPUTS = {
+  openai_api_key: "cred-openai",
+  anthropic_api_key: "cred-anthropic",
+  gemini_api_key: "cred-gemini",
+  xai_api_key: "cred-xai",
+  openrouter_api_key: "cred-openrouter",
+  groq_api_key: "cred-groq",
+  togetherai_api_key: "cred-togetherai",
+  huggingface_api_key: "cred-huggingface",
+  azure_api_key: "cred-azure",
+};
+
 const state = {
   config: null,
   meta: null,
-  models: [],
+  models: {
+    writer: { models: [], supportsListing: false, manual: false },
+    judge: { models: [], supportsListing: false, manual: false },
+  },
   chat: loadJson(STORAGE.chat, []),
   transcript: loadJson(STORAGE.transcript, []),
   busy: false,
   currentTurnId: null,
 };
 
-/** Load JSON from localStorage with fallback. */
 function loadJson(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -27,12 +53,77 @@ function loadJson(key, fallback) {
   }
 }
 
-/** Save JSON to localStorage. */
 function saveJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/** Switch visible tab page. */
+function providerMeta(providerId) {
+  return PROVIDERS.find((provider) => provider.id === providerId) || PROVIDERS[0];
+}
+
+function defaultConfig() {
+  return {
+    settings: {
+      credentials: {
+        openai_api_key: "",
+        anthropic_api_key: "",
+        gemini_api_key: "",
+        xai_api_key: "",
+        openrouter_api_key: "",
+        groq_api_key: "",
+        togetherai_api_key: "",
+        huggingface_api_key: "",
+        azure_api_key: "",
+      },
+      writer: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_base: "",
+        api_version: "",
+      },
+      judge: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        api_base: "",
+        api_version: "",
+      },
+      temperature: 0.4,
+      max_tokens: 650,
+      max_revisions_per_rule: 1,
+      execution_mode: "sequential",
+      parallel_max_iterations: 0,
+      max_iteration_ms: 0,
+      timeout_ms: 45000,
+    },
+    rules: [
+      "Be helpful, clear, and accurate.",
+      "Do not provide illegal wrongdoing instructions or facilitation.",
+      "Do not reveal secrets or private data (including API keys).",
+      "If uncertain, state uncertainty and ask clarifying questions.",
+      "Keep responses concise unless the user asks for depth.",
+    ],
+    prompts: {
+      writer_system:
+        "You are the writer agent. Revise the existing response with minimal changes. Preserve the original wording, structure, and tone as much as possible. Only modify the specific parts needed to address the judge's critique and follow the provided rule. Do not rewrite or rephrase unaffected sections. Return ONLY the final user-facing answer, with no meta-commentary.",
+      judge_pass_system:
+        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. Do not use any other criteria. Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer follows the rule. Schema: {"applies": boolean, "pass": boolean}. Constraints: if applies is false, pass MUST be true.',
+      judge_critique_system:
+        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. Base your judgment only on the given rule, not on any other criteria. The required fixes must clearly identify what part of the answer is problematic and how it must be changed so the revised answer no longer violates the rule. Return JSON ONLY (no markdown, no extra text). Schema: {"critique": string, "required_fixes": string}.',
+    },
+  };
+}
+
+function truncate(text, max) {
+  const value = String(text || "");
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function escapeHtml(text) {
+  const node = document.createElement("div");
+  node.textContent = String(text ?? "");
+  return node.innerHTML;
+}
+
 function setPage(page) {
   for (const section of document.querySelectorAll(".page")) {
     section.hidden = section.id !== `page-${page}`;
@@ -42,7 +133,15 @@ function setPage(page) {
   }
 }
 
-/** Put UI in busy/idle mode. */
+function setSettingsSection(sectionName) {
+  for (const button of document.querySelectorAll(".settingsNavButton")) {
+    button.setAttribute("aria-selected", button.dataset.settingsSection === sectionName ? "true" : "false");
+  }
+  for (const panel of document.querySelectorAll(".settingsPanel")) {
+    panel.hidden = panel.id !== `settings-panel-${sectionName}`;
+  }
+}
+
 function setBusy(isBusy, label) {
   state.busy = isBusy;
   const pill = document.getElementById("status-pill");
@@ -50,7 +149,16 @@ function setBusy(isBusy, label) {
   pill.classList.toggle("ok", !isBusy);
   pill.classList.toggle("bad", isBusy);
 
-  for (const id of ["btn-send", "btn-save-config", "btn-save-rules", "btn-save-settings", "btn-test-connection", "btn-refresh-models"]) {
+  for (const id of [
+    "btn-send",
+    "btn-save-config",
+    "btn-save-rules",
+    "btn-save-settings",
+    "btn-writer-refresh-models",
+    "btn-judge-refresh-models",
+    "btn-writer-test-connection",
+    "btn-judge-test-connection",
+  ]) {
     const el = document.getElementById(id);
     if (el) el.disabled = isBusy;
   }
@@ -58,7 +166,6 @@ function setBusy(isBusy, label) {
   if (stop) stop.disabled = !isBusy || !state.currentTurnId;
 }
 
-/** Convert a streamed run event into a concise status label. */
 function statusLabelFromEvent(event) {
   if (!event || !event.stage) return "running constitutional loop...";
   const stageMap = {
@@ -92,13 +199,6 @@ function statusLabelFromEvent(event) {
   return `${base}${rulePart}${iterPart}`;
 }
 
-/** Whether a usable API key exists from current draft input or loaded config/env. */
-function hasEffectiveApiKey() {
-  const typed = document.getElementById("set-api-key")?.value.trim() || "";
-  return Boolean(typed || state.meta?.api_key_present);
-}
-
-/** Normalize chat list to user/assistant messages only. */
 function normalizeChat(messages) {
   if (!Array.isArray(messages)) return [];
   return messages
@@ -113,7 +213,6 @@ function normalizeChat(messages) {
     .filter(Boolean);
 }
 
-/** Render chat list UI. */
 function renderChat() {
   const root = document.getElementById("chat-list");
   root.innerHTML = "";
@@ -132,7 +231,6 @@ function renderChat() {
   }
 }
 
-/** Render transcript details generated by the Python engine. */
 function renderTranscript() {
   const root = document.getElementById("transcript-list");
   root.innerHTML = "";
@@ -185,15 +283,14 @@ function renderTranscript() {
       details.appendChild(timeline);
     }
 
-    /** Create one rule-check details block for transcript output. */
     const renderRuleCheck = (check) => {
       const checkNode = document.createElement("details");
       checkNode.style.marginTop = "8px";
       const status = check.applies === false ? "N/A" : check.pass ? "PASS" : "FAIL";
-      const s = document.createElement("summary");
+      const summaryNode = document.createElement("summary");
       const ruleNum = Number.isFinite(check.rule_index) ? check.rule_index + 1 : "?";
-      s.textContent = `Rule ${ruleNum}: ${status}`;
-      checkNode.appendChild(s);
+      summaryNode.textContent = `Rule ${ruleNum}: ${status}`;
+      checkNode.appendChild(summaryNode);
 
       const content = document.createElement("div");
       content.className = "small";
@@ -251,44 +348,31 @@ function renderTranscript() {
   }
 }
 
-/** Populate writer/judge model dropdowns from state.models while preserving selected values. */
-function syncModelOptions() {
-  const writer = document.getElementById("set-writer-model");
-  const judge = document.getElementById("set-judge-model");
-  if (!writer || !judge || !state.config) return;
-  const selectedWriter = state.config.settings?.writer_model || "";
-  const selectedJudge = state.config.settings?.judge_model || "";
-  const ids = state.models.map((m) => String(m.id || "")).filter((id) => id.length > 0);
-  const pool = new Set(ids);
-  if (selectedWriter) pool.add(selectedWriter);
-  if (selectedJudge) pool.add(selectedJudge);
-  const options = Array.from(pool).sort();
-
-  writer.innerHTML = "";
-  judge.innerHTML = "";
-  for (const id of options) {
-    const w = document.createElement("option");
-    w.value = id;
-    w.textContent = id;
-    writer.appendChild(w);
-
-    const j = document.createElement("option");
-    j.value = id;
-    j.textContent = id;
-    judge.appendChild(j);
-  }
-  if (selectedWriter) writer.value = selectedWriter;
-  if (selectedJudge) judge.value = selectedJudge;
-}
-
-/** Read config form controls into state.config. */
 function readFormIntoState() {
   if (!state.config) return;
-  const apiKey = document.getElementById("set-api-key").value.trim();
+
+  const credentials = {};
+  for (const [fieldName, inputId] of Object.entries(CREDENTIAL_INPUTS)) {
+    const value = document.getElementById(inputId).value.trim();
+    if (value) credentials[fieldName] = value;
+  }
+
+  const readRole = (role) => {
+    const modelSelect = document.getElementById(`${role}-model-select`);
+    const modelInput = document.getElementById(`${role}-model-input`);
+    const manual = !modelInput.classList.contains("hidden");
+    return {
+      provider: document.getElementById(`${role}-provider`).value,
+      model: manual ? modelInput.value.trim() : modelSelect.value.trim(),
+      api_base: document.getElementById(`${role}-api-base`).value.trim(),
+      api_version: document.getElementById(`${role}-api-version`).value.trim(),
+    };
+  };
+
   state.config.settings = {
-    base_url: document.getElementById("set-base-url").value.trim(),
-    writer_model: document.getElementById("set-writer-model").value.trim(),
-    judge_model: document.getElementById("set-judge-model").value.trim(),
+    credentials,
+    writer: readRole("writer"),
+    judge: readRole("judge"),
     temperature: Number(document.getElementById("set-temperature").value || 0.4),
     max_tokens: Number(document.getElementById("set-max-tokens").value || 650),
     max_revisions_per_rule: Number(document.getElementById("set-max-revisions").value || 1),
@@ -297,9 +381,6 @@ function readFormIntoState() {
     max_iteration_ms: Number(document.getElementById("set-max-iteration-ms").value || 0),
     timeout_ms: Number(document.getElementById("set-timeout-ms").value || 45000),
   };
-  if (apiKey) {
-    state.config.settings.api_key = apiKey;
-  }
   state.config.prompts = {
     writer_system: document.getElementById("prompt-writer").value,
     judge_pass_system: document.getElementById("prompt-pass").value,
@@ -312,69 +393,184 @@ function readFormIntoState() {
     .filter((line) => line.length > 0);
 }
 
-/** Write state.config into form controls. */
-function syncFormFromState() {
-  if (!state.config) return;
-  const s = state.config.settings;
-  const p = state.config.prompts;
-
-  document.getElementById("set-base-url").value = s.base_url || "";
-  syncModelOptions();
-  document.getElementById("set-writer-model").value = s.writer_model || "";
-  document.getElementById("set-judge-model").value = s.judge_model || "";
-  document.getElementById("set-temperature").value = String(s.temperature ?? 0.4);
-  document.getElementById("set-max-tokens").value = String(s.max_tokens ?? 650);
-  document.getElementById("set-max-revisions").value = String(s.max_revisions_per_rule ?? 1);
-  document.getElementById("set-execution-mode").value = s.execution_mode || "sequential";
-  document.getElementById("set-parallel-max-iterations").value = String(s.parallel_max_iterations ?? 0);
-  document.getElementById("set-max-iteration-ms").value = String(s.max_iteration_ms ?? 0);
-  document.getElementById("set-timeout-ms").value = String(s.timeout_ms ?? 45000);
-  document.getElementById("rules-text").value = (state.config.rules || []).join("\n");
-
-  document.getElementById("prompt-writer").value = p.writer_system || "";
-  document.getElementById("prompt-pass").value = p.judge_pass_system || "";
-  document.getElementById("prompt-critique").value = p.judge_critique_system || "";
-
-  document.getElementById("pill-rules").textContent = `rules: ${(state.config.rules || []).length}`;
-  const keySet = hasEffectiveApiKey();
-  const keyPill = document.getElementById("pill-key");
-  keyPill.textContent = `api key: ${keySet ? "set" : "missing"}`;
-  keyPill.classList.toggle("ok", keySet);
-  keyPill.classList.toggle("bad", !keySet);
-
-  const source = state.meta?.api_key_source || "none";
-  const sourceNode = document.getElementById("api-key-source");
-  sourceNode.textContent =
-    source === "environment"
-      ? "Key source: OPENAI_API_KEY environment variable (takes precedence over saved key)."
-      : source === "config"
-        ? "Key source: local config file."
-        : "Key source: not set.";
-
-  const setupBanner = document.getElementById("setup-banner");
-  setupBanner.hidden = keySet;
-  if (state.meta?.load_error) {
-    setupBanner.hidden = false;
-    setupBanner.textContent = `Config load warning: ${state.meta.load_error}`;
-  } else if (!keySet) {
-    setupBanner.textContent = "Setup required: add an API key, save settings, then start chatting.";
+function syncProviderOptions() {
+  for (const role of ["writer", "judge"]) {
+    const select = document.getElementById(`${role}-provider`);
+    select.innerHTML = "";
+    for (const provider of PROVIDERS) {
+      const option = document.createElement("option");
+      option.value = provider.id;
+      option.textContent = provider.label;
+      select.appendChild(option);
+    }
   }
 }
 
-/** GET /api/config. */
+function syncModelControl(role) {
+  if (!state.config) return;
+  const roleConfig = state.config.settings?.[role] || {};
+  const info = state.models[role] || { models: [], supportsListing: false, manual: false };
+  const modelSelect = document.getElementById(`${role}-model-select`);
+  const modelInput = document.getElementById(`${role}-model-input`);
+  const status = document.getElementById(`${role}-model-status`);
+  const options = Array.from(new Set((info.models || []).map((item) => String(item.id || "").trim()).filter(Boolean)));
+
+  if (info.supportsListing && options.length > 0 && !info.manual) {
+    modelSelect.innerHTML = "";
+    for (const modelName of options) {
+      const option = document.createElement("option");
+      option.value = modelName;
+      option.textContent = modelName;
+      modelSelect.appendChild(option);
+    }
+    if (roleConfig.model && !options.includes(roleConfig.model)) {
+      const option = document.createElement("option");
+      option.value = roleConfig.model;
+      option.textContent = `${roleConfig.model} (current)`;
+      modelSelect.appendChild(option);
+    }
+    modelSelect.value = roleConfig.model || options[0] || "";
+    modelSelect.classList.remove("hidden");
+    modelInput.classList.add("hidden");
+    modelInput.value = roleConfig.model || "";
+    status.textContent = `Model listing is live for ${roleConfig.provider || "this provider"}.`;
+  } else {
+    modelInput.classList.remove("hidden");
+    modelSelect.classList.add("hidden");
+    modelInput.value = roleConfig.model || "";
+    modelSelect.innerHTML = "";
+    status.textContent = info.supportsListing
+      ? "No models were returned. Enter a model name manually."
+      : "Provider-side model listing is unavailable here. Enter a model name manually.";
+  }
+}
+
+function effectiveCredentialSource(fieldName) {
+  return state.meta?.credential_sources?.[fieldName] || "none";
+}
+
+function hasCredentialForProvider(providerId) {
+  const provider = providerMeta(providerId);
+  if (!provider.requiresKey || !provider.credential) return true;
+  const typed = document.getElementById(CREDENTIAL_INPUTS[provider.credential])?.value.trim() || "";
+  if (typed) return true;
+  return effectiveCredentialSource(provider.credential) !== "none";
+}
+
+function syncCredentialSourceLabels() {
+  for (const [fieldName, inputId] of Object.entries(CREDENTIAL_INPUTS)) {
+    const node = document.getElementById(`${inputId}-source`);
+    if (!node) continue;
+    const typed = document.getElementById(inputId).value.trim();
+    if (typed) {
+      node.textContent = "This value will be used on save.";
+      continue;
+    }
+    const source = effectiveCredentialSource(fieldName);
+    node.textContent =
+      source === "environment"
+        ? "Source: environment variable"
+        : source === "config"
+          ? "Source: saved config"
+          : "Source: not set";
+  }
+}
+
+function syncFormFromState() {
+  if (!state.config) return;
+  const settings = state.config.settings;
+  const prompts = state.config.prompts;
+
+  syncProviderOptions();
+  document.getElementById("writer-provider").value = settings.writer?.provider || "openai";
+  document.getElementById("writer-api-base").value = settings.writer?.api_base || "";
+  document.getElementById("writer-api-version").value = settings.writer?.api_version || "";
+  document.getElementById("judge-provider").value = settings.judge?.provider || "openai";
+  document.getElementById("judge-api-base").value = settings.judge?.api_base || "";
+  document.getElementById("judge-api-version").value = settings.judge?.api_version || "";
+
+  document.getElementById("set-temperature").value = String(settings.temperature ?? 0.4);
+  document.getElementById("set-max-tokens").value = String(settings.max_tokens ?? 650);
+  document.getElementById("set-max-revisions").value = String(settings.max_revisions_per_rule ?? 1);
+  document.getElementById("set-execution-mode").value = settings.execution_mode || "sequential";
+  document.getElementById("set-parallel-max-iterations").value = String(settings.parallel_max_iterations ?? 0);
+  document.getElementById("set-max-iteration-ms").value = String(settings.max_iteration_ms ?? 0);
+  document.getElementById("set-timeout-ms").value = String(settings.timeout_ms ?? 45000);
+  document.getElementById("rules-text").value = (state.config.rules || []).join("\n");
+
+  document.getElementById("prompt-writer").value = prompts.writer_system || "";
+  document.getElementById("prompt-pass").value = prompts.judge_pass_system || "";
+  document.getElementById("prompt-critique").value = prompts.judge_critique_system || "";
+
+  syncCredentialSourceLabels();
+  syncModelControl("writer");
+  syncModelControl("judge");
+  syncStatusPills();
+}
+
+function syncStatusPills() {
+  if (!state.config) return;
+  const writerProvider = document.getElementById("writer-provider").value;
+  const judgeProvider = document.getElementById("judge-provider").value;
+  const writerModel = currentModelValue("writer");
+  const judgeModel = currentModelValue("judge");
+
+  const writerReady = Boolean(writerModel) && hasCredentialForProvider(writerProvider);
+  const judgeReady = Boolean(judgeModel) && hasCredentialForProvider(judgeProvider);
+
+  const writerPill = document.getElementById("pill-writer");
+  writerPill.textContent = `writer: ${writerReady ? "ready" : "incomplete"}`;
+  writerPill.classList.toggle("ok", writerReady);
+  writerPill.classList.toggle("bad", !writerReady);
+
+  const judgePill = document.getElementById("pill-judge");
+  judgePill.textContent = `judge: ${judgeReady ? "ready" : "incomplete"}`;
+  judgePill.classList.toggle("ok", judgeReady);
+  judgePill.classList.toggle("bad", !judgeReady);
+
+  document.getElementById("pill-rules").textContent = `rules: ${(state.config.rules || []).length}`;
+
+  const setupBanner = document.getElementById("setup-banner");
+  if (state.meta?.load_error) {
+    setupBanner.hidden = false;
+    setupBanner.textContent = `Config load warning: ${state.meta.load_error}`;
+    return;
+  }
+
+  const issues = [];
+  if (!writerModel) issues.push("select a writer model");
+  if (!judgeModel) issues.push("select a judge model");
+  if (!hasCredentialForProvider(writerProvider)) issues.push(`set credentials for ${writerProvider}`);
+  if (!hasCredentialForProvider(judgeProvider)) issues.push(`set credentials for ${judgeProvider}`);
+
+  if (issues.length) {
+    setupBanner.hidden = false;
+    setupBanner.textContent = `Setup required: ${issues.join(", ")}.`;
+  } else {
+    setupBanner.hidden = true;
+  }
+}
+
+function currentModelValue(role) {
+  const input = document.getElementById(`${role}-model-input`);
+  const select = document.getElementById(`${role}-model-select`);
+  return input.classList.contains("hidden") ? select.value.trim() : input.value.trim();
+}
+
 async function fetchConfig() {
   const res = await fetch("/api/config");
   const json = await res.json();
   if (!res.ok || !json.ok) {
     throw new Error(json.error || "Failed to load config.");
   }
-  state.config = json.config;
+  state.config = json.config || defaultConfig();
   state.meta = json.meta || null;
-  document.getElementById("set-api-key").value = "";
+  for (const inputId of Object.values(CREDENTIAL_INPUTS)) {
+    document.getElementById(inputId).value = "";
+  }
   syncFormFromState();
 }
 
-/** POST /api/config with current state.config. */
 async function saveConfigToServer() {
   if (!state.config) return;
   readFormIntoState();
@@ -389,35 +585,39 @@ async function saveConfigToServer() {
   }
   state.config = json.config;
   state.meta = json.meta || null;
-  document.getElementById("set-api-key").value = "";
+  for (const inputId of Object.values(CREDENTIAL_INPUTS)) {
+    document.getElementById(inputId).value = "";
+  }
   syncFormFromState();
 }
 
-/** POST /api/models and cache available model IDs in state.models. */
-async function fetchModels() {
+async function fetchModels(role) {
   if (!state.config) return;
   readFormIntoState();
   const res = await fetch("/api/models", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ settings: state.config.settings }),
+    body: JSON.stringify({ role, settings: state.config.settings }),
   });
   const json = await res.json();
   if (!res.ok || !json.ok) {
     throw new Error(json.error || "Failed to load model list.");
   }
-  state.models = Array.isArray(json.models) ? json.models : [];
-  syncModelOptions();
+  state.models[role] = {
+    models: Array.isArray(json.models) ? json.models : [],
+    supportsListing: Boolean(json.supports_listing),
+    manual: !(json.supports_listing && Array.isArray(json.models) && json.models.length > 0),
+  };
+  syncModelControl(role);
 }
 
-/** POST /api/test-connection and return result payload. */
-async function testConnection() {
+async function testConnection(role) {
   if (!state.config) throw new Error("Config not loaded.");
   readFormIntoState();
   const res = await fetch("/api/test-connection", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ settings: state.config.settings }),
+    body: JSON.stringify({ role, settings: state.config.settings }),
   });
   const json = await res.json();
   if (!res.ok || !json.ok) {
@@ -426,18 +626,13 @@ async function testConnection() {
   return json.result;
 }
 
-/** POST /api/turn and return turn payload. */
 async function runTurn(userText) {
   if (!state.config) throw new Error("Config not loaded.");
   readFormIntoState();
-  const runtimeSettings = { ...state.config.settings };
-  if (!runtimeSettings.api_key) {
-    delete runtimeSettings.api_key;
-  }
   const payload = {
     user_text: userText,
     thread_messages: state.chat,
-    settings: runtimeSettings,
+    settings: state.config.settings,
     rules: state.config.rules,
     prompts: state.config.prompts,
     turn_id: state.currentTurnId,
@@ -449,7 +644,6 @@ async function runTurn(userText) {
     body: JSON.stringify(payload),
   });
   if (!res.ok || !res.body) {
-    // Fallback to non-stream endpoint if streaming is unavailable.
     const fallback = await fetch("/api/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -498,14 +692,17 @@ async function runTurn(userText) {
   return finalTurn;
 }
 
-/** Send message handler. */
 async function onSend() {
   if (state.busy) return;
-  if (!hasEffectiveApiKey()) {
+  syncStatusPills();
+  const writerProvider = document.getElementById("writer-provider").value;
+  if (!currentModelValue("writer") || !hasCredentialForProvider(writerProvider)) {
     setPage("settings");
-    alert("Missing API key. Add it in Settings, save, then retry.");
+    setSettingsSection("writer");
+    alert("Writer settings are incomplete. Configure the writer model and credentials first.");
     return;
   }
+
   const box = document.getElementById("chat-input");
   const text = box.value.trim();
   if (!text) return;
@@ -518,268 +715,199 @@ async function onSend() {
 
   try {
     state.currentTurnId = (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) || String(Date.now());
-    setBusy(true, "running constitutional loop...");
+    setBusy(true, "starting...");
     const turn = await runTurn(text);
+    state.chat.push({ role: "assistant", content: turn.final || "", at: new Date().toISOString() });
+    state.chat = normalizeChat(state.chat);
+    saveJson(STORAGE.chat, state.chat);
+    renderChat();
+
     state.transcript.unshift(turn);
     saveJson(STORAGE.transcript, state.transcript);
-
-    state.chat.push({ role: "assistant", content: turn.final || "", at: new Date().toISOString() });
-    saveJson(STORAGE.chat, state.chat);
-    renderChat();
     renderTranscript();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    state.chat.push({ role: "assistant", content: `Error: ${message}`, at: new Date().toISOString() });
-    saveJson(STORAGE.chat, state.chat);
-    renderChat();
   } finally {
     state.currentTurnId = null;
-    setBusy(false);
+    setBusy(false, "idle");
   }
 }
 
-/** Escape text for HTML contexts. */
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+async function stopTurn() {
+  if (!state.currentTurnId) return;
+  await fetch("/api/turn-cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turn_id: state.currentTurnId }),
+  });
 }
 
-/** Truncate text with ellipsis for compact summaries. */
-function truncate(text, maxChars) {
-  const s = String(text || "");
-  return s.length <= maxChars ? s : `${s.slice(0, maxChars - 1)}...`;
-}
-
-/** Export transcript to local JSON file. */
 function exportTranscript() {
   const blob = new Blob([JSON.stringify(state.transcript, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "constitutional-ai-transcript.json";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "constitutional-ai-transcript.json";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-/** Attach all event listeners. */
-function bindEvents() {
+function applyProviderDefaults(role) {
+  if (!state.config) return;
+  const providerId = document.getElementById(`${role}-provider`).value;
+  const provider = providerMeta(providerId);
+  state.config.settings[role].provider = providerId;
+  state.config.settings[role].model = provider.defaultModel;
+  state.models[role] = { models: [], supportsListing: false, manual: true };
+  syncModelControl(role);
+  syncStatusPills();
+}
+
+function installListeners() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.addEventListener("click", () => setPage(tab.dataset.page));
   }
-
-  document.getElementById("btn-send").addEventListener("click", onSend);
-  document.getElementById("btn-stop").addEventListener("click", async () => {
-    if (!state.currentTurnId) return;
-    setBusy(true, "stopping...");
-    try {
-      await fetch("/api/turn-cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turn_id: state.currentTurnId }),
-      });
-    } catch {
-      // Ignore network errors; loop may still end from local disconnects/timeouts.
-    }
-  });
-  document.getElementById("chat-input").addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") onSend();
-  });
-
-  document.getElementById("btn-clear-chat").addEventListener("click", () => {
-    if (state.busy) return;
-    state.chat = [];
-    saveJson(STORAGE.chat, state.chat);
-    renderChat();
-  });
-
-  document.getElementById("btn-clear-transcript").addEventListener("click", () => {
-    if (state.busy) return;
-    state.transcript = [];
-    saveJson(STORAGE.transcript, state.transcript);
-    renderTranscript();
-  });
-
-  document.getElementById("btn-export").addEventListener("click", exportTranscript);
-
-  document.getElementById("btn-save-config").addEventListener("click", async () => {
-    try {
-      await saveConfigToServer();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-save-rules").addEventListener("click", async () => {
-    try {
-      await saveConfigToServer();
-      setPage("chat");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-save-settings").addEventListener("click", async () => {
-    try {
-      await saveConfigToServer();
-      await fetchModels();
-      setPage("chat");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-refresh-models").addEventListener("click", async () => {
-    try {
-      await fetchModels();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-test-connection").addEventListener("click", async () => {
-    const resultNode = document.getElementById("test-connection-result");
-    resultNode.textContent = "Testing connection...";
-    try {
-      setBusy(true, "testing connection...");
-      const result = await testConnection();
-      resultNode.textContent = `${result.message} model=${result.model} base_url=${result.base_url}`;
-      resultNode.classList.add("ok");
-      resultNode.classList.remove("bad");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      resultNode.textContent = `Connection test failed: ${message}`;
-      resultNode.classList.add("bad");
-      resultNode.classList.remove("ok");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  document.getElementById("btn-toggle-api-key").addEventListener("click", () => {
-    const keyInput = document.getElementById("set-api-key");
-    const btn = document.getElementById("btn-toggle-api-key");
-    const reveal = keyInput.type === "password";
-    keyInput.type = reveal ? "text" : "password";
-    btn.textContent = reveal ? "Hide" : "Reveal";
-  });
-
-  document.getElementById("btn-reset-settings").addEventListener("click", async () => {
-    try {
-      state.config = {
-        settings: {
-          base_url: "https://api.openai.com",
-          writer_model: "gpt-4o-mini",
-          judge_model: "gpt-4o-mini",
-          temperature: 0.4,
-          max_tokens: 650,
-          max_revisions_per_rule: 1,
-          execution_mode: "sequential",
-          parallel_max_iterations: 0,
-          max_iteration_ms: 0,
-          timeout_ms: 45000,
-        },
-        rules: state.config?.rules || [],
-        prompts: {
-          writer_system:
-            "You are the writer agent. Revise the existing response with minimal changes. Preserve the original wording, structure, and tone as much as possible. Only modify the specific parts needed to address the judge's critique and follow the provided rule. Do not rewrite or rephrase unaffected sections. Return ONLY the final user-facing answer, with no meta-commentary.",
-          judge_pass_system:
-            "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. Do not use any other criteria. Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer follows the rule. Schema: {\"applies\": boolean, \"pass\": boolean}. Constraints: if applies is false, pass MUST be true.",
-          judge_critique_system:
-            "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. Base your judgment only on the given rule, not on any other criteria. The required fixes must clearly identify what part of the answer is problematic and how it must be changed so the revised answer no longer violates the rule. Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}.",
-        },
-      };
-      document.getElementById("set-api-key").value = "";
-      syncFormFromState();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-reload-config").addEventListener("click", async () => {
-    try {
-      await fetchConfig();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  document.getElementById("btn-load-sample").addEventListener("click", () => {
-    document.getElementById("rules-text").value = [
-      "Be helpful, clear, and accurate.",
-      "Do not provide illegal wrongdoing instructions or facilitation.",
-      "Do not reveal secrets or private data (including API keys).",
-      "If uncertain, state uncertainty and ask clarifying questions.",
-      "Keep responses concise unless the user asks for depth.",
-    ].join("\n");
-    readFormIntoState();
-    syncFormFromState();
-  });
+  for (const button of document.querySelectorAll(".settingsNavButton")) {
+    button.addEventListener("click", () => setSettingsSection(button.dataset.settingsSection));
+  }
+  for (const [fieldName, inputId] of Object.entries(CREDENTIAL_INPUTS)) {
+    document.getElementById(inputId).addEventListener("input", () => {
+      syncCredentialSourceLabels();
+      syncStatusPills();
+    });
+  }
+  for (const role of ["writer", "judge"]) {
+    document.getElementById(`${role}-provider`).addEventListener("change", () => applyProviderDefaults(role));
+    document.getElementById(`${role}-api-base`).addEventListener("input", () => syncStatusPills());
+    document.getElementById(`${role}-api-version`).addEventListener("input", () => syncStatusPills());
+    document.getElementById(`${role}-model-input`).addEventListener("input", () => syncStatusPills());
+    document.getElementById(`${role}-model-select`).addEventListener("change", () => syncStatusPills());
+    document.getElementById(`btn-${role}-refresh-models`).addEventListener("click", async () => {
+      const statusNode = document.getElementById(`${role}-model-status`);
+      try {
+        setBusy(true, "loading models...");
+        await fetchModels(role);
+      } catch (error) {
+        state.models[role] = { models: [], supportsListing: false, manual: true };
+        syncModelControl(role);
+        statusNode.textContent = String(error.message || error);
+      } finally {
+        setBusy(false, "idle");
+      }
+    });
+    document.getElementById(`btn-${role}-test-connection`).addEventListener("click", async () => {
+      const resultNode = document.getElementById(`${role}-test-result`);
+      try {
+        setBusy(true, "testing connection...");
+        const result = await testConnection(role);
+        resultNode.textContent = `${result.message} provider=${result.provider} model=${result.model}${result.api_base ? ` api_base=${result.api_base}` : ""}`;
+      } catch (error) {
+        resultNode.textContent = String(error.message || error);
+      } finally {
+        setBusy(false, "idle");
+      }
+    });
+  }
 
   for (const id of [
-    "set-base-url",
-    "set-writer-model",
-    "set-judge-model",
     "set-temperature",
     "set-max-tokens",
     "set-max-revisions",
+    "set-timeout-ms",
     "set-execution-mode",
     "set-parallel-max-iterations",
     "set-max-iteration-ms",
-    "set-timeout-ms",
+    "rules-text",
     "prompt-writer",
     "prompt-pass",
     "prompt-critique",
   ]) {
     document.getElementById(id).addEventListener("input", () => {
       readFormIntoState();
-      syncFormFromState();
+      syncStatusPills();
     });
   }
 
-  document.getElementById("set-api-key").addEventListener("input", () => {
-    syncFormFromState();
+  document.getElementById("btn-send").addEventListener("click", onSend);
+  document.getElementById("btn-stop").addEventListener("click", stopTurn);
+  document.getElementById("chat-input").addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      onSend();
+    }
   });
-
-  // Keep constitution textarea free-form while typing; parse/normalize only during save/run.
-  document.getElementById("rules-text").addEventListener("input", () => {
-    const lines = document
-      .getElementById("rules-text")
-      .value.split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    document.getElementById("pill-rules").textContent = `rules: ${lines.length}`;
+  document.getElementById("btn-clear-chat").addEventListener("click", () => {
+    state.chat = [];
+    saveJson(STORAGE.chat, state.chat);
+    renderChat();
+  });
+  document.getElementById("btn-clear-transcript").addEventListener("click", () => {
+    state.transcript = [];
+    saveJson(STORAGE.transcript, state.transcript);
+    renderTranscript();
+  });
+  document.getElementById("btn-export").addEventListener("click", exportTranscript);
+  document.getElementById("btn-save-config").addEventListener("click", async () => {
+    setBusy(true, "saving config...");
+    try {
+      await saveConfigToServer();
+    } finally {
+      setBusy(false, "idle");
+    }
+  });
+  document.getElementById("btn-save-settings").addEventListener("click", async () => {
+    setBusy(true, "saving settings...");
+    try {
+      await saveConfigToServer();
+    } finally {
+      setBusy(false, "idle");
+    }
+  });
+  document.getElementById("btn-save-rules").addEventListener("click", async () => {
+    setBusy(true, "saving rules...");
+    try {
+      await saveConfigToServer();
+    } finally {
+      setBusy(false, "idle");
+    }
+  });
+  document.getElementById("btn-reload-config").addEventListener("click", async () => {
+    setBusy(true, "reloading config...");
+    try {
+      await fetchConfig();
+    } finally {
+      setBusy(false, "idle");
+    }
+  });
+  document.getElementById("btn-reset-settings").addEventListener("click", () => {
+    state.config = defaultConfig();
+    state.meta = state.meta || {};
+    for (const inputId of Object.values(CREDENTIAL_INPUTS)) {
+      document.getElementById(inputId).value = "";
+    }
+    state.models.writer = { models: [], supportsListing: false, manual: true };
+    state.models.judge = { models: [], supportsListing: false, manual: true };
+    syncFormFromState();
+    setSettingsSection("credentials");
+  });
+  document.getElementById("btn-load-sample").addEventListener("click", () => {
+    document.getElementById("rules-text").value = defaultConfig().rules.join("\n");
+    readFormIntoState();
+    syncStatusPills();
   });
 }
 
-/** App bootstrap. */
-async function init() {
-  state.chat = normalizeChat(state.chat);
-  saveJson(STORAGE.chat, state.chat);
+async function bootstrap() {
   renderChat();
   renderTranscript();
-  bindEvents();
-
-  setBusy(true, "loading config...");
+  installListeners();
+  setPage("chat");
+  setSettingsSection("credentials");
+  setBusy(false, "idle");
   try {
     await fetchConfig();
-    try {
-      await fetchModels();
-    } catch {
-      // Leave current configured values if model listing fails.
-    }
-    if (!hasEffectiveApiKey()) {
-      setPage("settings");
-    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    alert(`Could not load config from server: ${message}`);
-  } finally {
-    setBusy(false);
+    state.config = defaultConfig();
+    syncFormFromState();
+    alert(String(error.message || error));
   }
 }
 
-init();
+bootstrap();
