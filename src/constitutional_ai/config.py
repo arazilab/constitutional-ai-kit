@@ -362,7 +362,17 @@ def merge_config(base: AppConfig, payload: dict[str, Any] | None) -> AppConfig:
     if isinstance(payload.get("settings"), dict):
         current = merged.settings
         incoming = payload["settings"]
-        merged.settings = RuntimeSettings.from_mapping({**asdict(current), **incoming})
+        current_dict = asdict(current)
+        merged_settings = {**current_dict, **incoming}
+
+        if isinstance(incoming.get("credentials"), dict):
+            merged_settings["credentials"] = {**current_dict["credentials"], **incoming["credentials"]}
+        if isinstance(incoming.get("writer"), dict):
+            merged_settings["writer"] = {**current_dict["writer"], **incoming["writer"]}
+        if isinstance(incoming.get("judge"), dict):
+            merged_settings["judge"] = {**current_dict["judge"], **incoming["judge"]}
+
+        merged.settings = RuntimeSettings.from_mapping(merged_settings)
 
     if isinstance(payload.get("rules"), list):
         merged.rules = [str(line).strip() for line in payload["rules"] if str(line).strip()]
