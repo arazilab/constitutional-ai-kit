@@ -6,17 +6,17 @@ const STORAGE = {
 };
 
 const PROVIDERS = [
-  { id: "openai", label: "OpenAI", credential: "openai_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "https://api.openai.com", defaultApiVersion: "" },
-  { id: "anthropic", label: "Anthropic", credential: "anthropic_api_key", requiresKey: true, defaultModel: "claude-sonnet-4-5-20250929", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "gemini", label: "Gemini", credential: "gemini_api_key", requiresKey: true, defaultModel: "gemini-2.5-flash", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "xai", label: "xAI", credential: "xai_api_key", requiresKey: true, defaultModel: "grok-2-latest", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "openrouter", label: "OpenRouter", credential: "openrouter_api_key", requiresKey: true, defaultModel: "openai/gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "groq", label: "Groq", credential: "groq_api_key", requiresKey: true, defaultModel: "llama-3.3-70b-versatile", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "togetherai", label: "Together AI", credential: "togetherai_api_key", requiresKey: true, defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "huggingface", label: "Hugging Face", credential: "huggingface_api_key", requiresKey: true, defaultModel: "meta-llama/Meta-Llama-3.1-8B-Instruct", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "azure", label: "Azure OpenAI", credential: "azure_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "" },
-  { id: "ollama", label: "Ollama", credential: null, requiresKey: false, defaultModel: "llama3.2", defaultApiBase: "http://localhost:11434", defaultApiVersion: "" },
-  { id: "lm_studio", label: "LM Studio", credential: null, requiresKey: false, defaultModel: "local-model", defaultApiBase: "http://localhost:1234", defaultApiVersion: "" },
+  { id: "openai", label: "OpenAI", credential: "openai_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses the standard OpenAI endpoint automatically." },
+  { id: "anthropic", label: "Anthropic", credential: "anthropic_api_key", requiresKey: true, defaultModel: "claude-sonnet-4-5-20250929", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses Anthropic's standard endpoint automatically." },
+  { id: "gemini", label: "Gemini", credential: "gemini_api_key", requiresKey: true, defaultModel: "gemini-2.5-flash", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM routes Gemini requests directly from the provider and API key." },
+  { id: "xai", label: "xAI", credential: "xai_api_key", requiresKey: true, defaultModel: "grok-2-latest", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses xAI's standard endpoint automatically." },
+  { id: "openrouter", label: "OpenRouter", credential: "openrouter_api_key", requiresKey: true, defaultModel: "openai/gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses OpenRouter's standard endpoint automatically." },
+  { id: "groq", label: "Groq", credential: "groq_api_key", requiresKey: true, defaultModel: "llama-3.3-70b-versatile", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses Groq's standard endpoint automatically." },
+  { id: "togetherai", label: "Together AI", credential: "togetherai_api_key", requiresKey: true, defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo", defaultApiBase: "", defaultApiVersion: "", showApiBase: false, showApiVersion: false, apiBaseHelp: "LiteLLM uses Together AI's standard endpoint automatically." },
+  { id: "huggingface", label: "Hugging Face", credential: "huggingface_api_key", requiresKey: true, defaultModel: "meta-llama/Meta-Llama-3.1-8B-Instruct", defaultApiBase: "", defaultApiVersion: "", showApiBase: true, showApiVersion: false, apiBaseHelp: "Set API base only when using a dedicated Hugging Face Inference Endpoint." },
+  { id: "azure", label: "Azure OpenAI", credential: "azure_api_key", requiresKey: true, defaultModel: "gpt-4o-mini", defaultApiBase: "", defaultApiVersion: "", showApiBase: true, showApiVersion: true, apiBaseHelp: "Azure requires your resource endpoint and usually an API version." },
+  { id: "ollama", label: "Ollama", credential: null, requiresKey: false, defaultModel: "llama3.2", defaultApiBase: "http://localhost:11434", defaultApiVersion: "", showApiBase: true, showApiVersion: false, apiBaseHelp: "Local Ollama needs the local server URL." },
+  { id: "lm_studio", label: "LM Studio", credential: null, requiresKey: false, defaultModel: "local-model", defaultApiBase: "http://localhost:1234", defaultApiVersion: "", showApiBase: true, showApiVersion: false, apiBaseHelp: "Local LM Studio needs the local server URL." },
 ];
 
 const CREDENTIAL_INPUTS = {
@@ -488,6 +488,16 @@ function syncModelControl(role) {
   }
 }
 
+function syncEndpointFields(role) {
+  const provider = providerMeta(document.getElementById(`${role}-provider`).value);
+  const apiBaseGroup = document.getElementById(`${role}-api-base-group`);
+  const apiVersionGroup = document.getElementById(`${role}-api-version-group`);
+  const apiBaseHelp = document.getElementById(`${role}-api-base-help`);
+  if (apiBaseGroup) apiBaseGroup.classList.toggle("hidden", !provider.showApiBase);
+  if (apiVersionGroup) apiVersionGroup.classList.toggle("hidden", !provider.showApiVersion);
+  if (apiBaseHelp) apiBaseHelp.textContent = provider.apiBaseHelp || "";
+}
+
 function effectiveCredentialSource(fieldName) {
   return state.meta?.credential_sources?.[fieldName] || "none";
 }
@@ -546,6 +556,8 @@ function syncFormFromState() {
   document.getElementById("prompt-critique").value = prompts.judge_critique_system || "";
 
   syncCredentialSourceLabels();
+  syncEndpointFields("writer");
+  syncEndpointFields("judge");
   syncModelControl("writer");
   syncModelControl("judge");
   syncStatusPills();
@@ -803,6 +815,7 @@ function applyProviderDefaults(role) {
   state.config.settings[role].api_version = provider.defaultApiVersion || "";
   document.getElementById(`${role}-api-base`).value = state.config.settings[role].api_base;
   document.getElementById(`${role}-api-version`).value = state.config.settings[role].api_version;
+  syncEndpointFields(role);
   state.models[role] = { models: [], supportsListing: false, manual: true };
   syncModelControl(role);
   syncStatusPills();
