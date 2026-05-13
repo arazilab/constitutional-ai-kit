@@ -94,6 +94,7 @@ function defaultConfig() {
       parallel_max_iterations: 0,
       max_iteration_ms: 0,
       timeout_ms: 45000,
+      conversation_context_messages: 10,
     },
     rules: [
       "Be helpful, clear, and accurate.",
@@ -106,9 +107,9 @@ function defaultConfig() {
       writer_system:
         "You are the writer agent. Revise the existing response with minimal changes. Preserve the original wording, structure, and tone as much as possible. Only modify the specific parts needed to address the judge's critique and follow the provided rule. Do not rewrite or rephrase unaffected sections. Return ONLY the final user-facing answer, with no meta-commentary.",
       judge_pass_system:
-        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. Do not use any other criteria. Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer follows the rule. Schema: {"applies": boolean, "pass": boolean}. Constraints: if applies is false, pass MUST be true.',
+        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. Do not use any other criteria. The rule level is either message or conversation. For message rules, judge the current initial draft. For conversation rules, judge the conversation context together with the current initial draft. Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies. If it does not apply, mark it as not applicable. If it applies, decide whether the target follows the rule. Schema: {"applies": boolean, "pass": boolean}. Constraints: if applies is false, pass MUST be true.',
       judge_critique_system:
-        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. Base your judgment only on the given rule, not on any other criteria. The required fixes must clearly identify what part of the answer is problematic and how it must be changed so the revised answer no longer violates the rule. Return JSON ONLY (no markdown, no extra text). Schema: {"critique": string, "required_fixes": string}.',
+        'You are the judge agent. Evaluate the writer agent\'s answer against the given rule ONLY. The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. Base your judgment only on the given rule, not on any other criteria. The rule level is either message or conversation. For message rules, judge the current initial draft. For conversation rules, judge the conversation context together with the current initial draft. The required fixes must clearly identify what part of the current initial draft is problematic and how it must be changed so the revised answer no longer violates the rule. Return JSON ONLY (no markdown, no extra text). Schema: {"critique": string, "required_fixes": string}.',
     },
   };
 }
@@ -423,6 +424,7 @@ function readFormIntoState() {
     parallel_max_iterations: Number(document.getElementById("set-parallel-max-iterations").value || 0),
     max_iteration_ms: Number(document.getElementById("set-max-iteration-ms").value || 0),
     timeout_ms: Number(document.getElementById("set-timeout-ms").value || 45000),
+    conversation_context_messages: Number(document.getElementById("set-conversation-context-messages").value || 10),
   };
   state.config.prompts = {
     writer_system: document.getElementById("prompt-writer").value,
@@ -549,6 +551,7 @@ function syncFormFromState() {
   document.getElementById("set-parallel-max-iterations").value = String(settings.parallel_max_iterations ?? 0);
   document.getElementById("set-max-iteration-ms").value = String(settings.max_iteration_ms ?? 0);
   document.getElementById("set-timeout-ms").value = String(settings.timeout_ms ?? 45000);
+  document.getElementById("set-conversation-context-messages").value = String(settings.conversation_context_messages ?? 10);
   document.getElementById("rules-text").value = (state.config.rules || []).join("\n");
 
   document.getElementById("prompt-writer").value = prompts.writer_system || "";
@@ -872,6 +875,7 @@ function installListeners() {
     "set-max-tokens",
     "set-max-revisions",
     "set-timeout-ms",
+    "set-conversation-context-messages",
     "set-execution-mode",
     "set-parallel-max-iterations",
     "set-max-iteration-ms",

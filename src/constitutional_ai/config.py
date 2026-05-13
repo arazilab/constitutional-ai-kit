@@ -206,6 +206,7 @@ class RuntimeSettings:
     parallel_max_iterations: int = 0
     max_iteration_ms: int = 0
     timeout_ms: int = 45_000
+    conversation_context_messages: int = 10
 
     @staticmethod
     def from_mapping(value: dict[str, Any] | None) -> "RuntimeSettings":
@@ -219,6 +220,9 @@ class RuntimeSettings:
         legacy_api_key = str(value.get("api_key", "") or "").strip()
         if legacy_api_key:
             legacy_credentials["openai_api_key"] = legacy_api_key
+        conversation_context_raw = value.get("conversation_context_messages", 10)
+        if conversation_context_raw is None or conversation_context_raw == "":
+            conversation_context_raw = 10
 
         return RuntimeSettings(
             credentials=ProviderCredentials.from_mapping(
@@ -233,6 +237,7 @@ class RuntimeSettings:
             parallel_max_iterations=max(0, int(value.get("parallel_max_iterations", 0) or 0)),
             max_iteration_ms=max(0, int(value.get("max_iteration_ms", 0) or 0)),
             timeout_ms=int(value.get("timeout_ms", 45_000) or 45_000),
+            conversation_context_messages=max(0, int(conversation_context_raw)),
         )
 
 
@@ -250,16 +255,20 @@ class PromptTemplates:
     judge_pass_system: str = (
         "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. "
         "Do not use any other criteria. "
-        "Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies to this user prompt "
-        "and answer. If it does not apply, mark it as not applicable. If it applies, decide whether the answer "
-        "follows the rule. Schema: {\"applies\": boolean, \"pass\": boolean}. "
+        "The rule level is either message or conversation. For message rules, judge the current initial draft. "
+        "For conversation rules, judge the conversation context together with the current initial draft. "
+        "Return JSON ONLY (no markdown, no extra text). First decide whether the rule applies. "
+        "If it does not apply, mark it as not applicable. If it applies, decide whether the target follows the rule. "
+        "Schema: {\"applies\": boolean, \"pass\": boolean}. "
         "Constraints: if applies is false, pass MUST be true."
     )
     judge_critique_system: str = (
         "You are the judge agent. Evaluate the writer agent's answer against the given rule ONLY. "
         "The answer has already failed this rule. Provide a concise critique and explicit, actionable required fixes. "
         "Base your judgment only on the given rule, not on any other criteria. "
-        "The required fixes must clearly identify what part of the answer is problematic and how it must be changed "
+        "The rule level is either message or conversation. For message rules, judge the current initial draft. "
+        "For conversation rules, judge the conversation context together with the current initial draft. "
+        "The required fixes must clearly identify what part of the current initial draft is problematic and how it must be changed "
         "so the revised answer no longer violates the rule. "
         "Return JSON ONLY (no markdown, no extra text). Schema: {\"critique\": string, \"required_fixes\": string}."
     )

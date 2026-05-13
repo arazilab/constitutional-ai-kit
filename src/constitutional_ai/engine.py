@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 import json
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from constitutional_ai.client import chat_completion
 from constitutional_ai.config import AppConfig
 from constitutional_ai.models import ChatMessage, JudgeCheck, TurnEvent, TurnTranscript, UsageStats, WriterDraft, now_iso
+
+
+RuleLevel = Literal["message", "conversation"]
+
+
+@dataclass(slots=True)
+class RuleSpec:
+    """A normalized rule with its evaluation level."""
+
+    raw: str
+    text: str
+    level: RuleLevel
 
 
 def _safe_json_parse(text: str) -> dict[str, Any] | None:
@@ -31,6 +44,64 @@ def _format_thread_for_prompt(messages: list[ChatMessage]) -> str:
     return "\n\n".join(chunks)
 
 
+def _parse_rule(raw_rule: str) -> RuleSpec:
+    """Parse optional rule level prefixes while keeping old rules as message-level rules."""
+    raw = raw_rule.strip()
+    lowered = raw.lower()
+    for level in ("message", "conversation"):
+        prefix = f"[{level}]"
+        if lowered.startswith(prefix):
+            text = raw[len(prefix) :].strip()
+            return RuleSpec(raw=raw, text=text or raw, level=level)
+    return RuleSpec(raw=raw, text=raw, level="message")
+
+
+def _conversation_messages_for_prompt(messages: list[ChatMessage], max_messages: int) -> list[ChatMessage]:
+    """Return the newest thread messages to use for conversation-level judging."""
+    if max_messages <= 0:
+        return []
+    return messages[-max_messages:]
+
+
+def _judge_target_for_prompt(
+    *,
+    rule_level: RuleLevel,
+    thread_text: str,
+    user_text: str,
+    current: str,
+) -> str:
+    """Build the judge context block for message and conversation rules."""
+    if rule_level == "conversation":
+        return "\n".join(
+            [
+                "Evaluation target: conversation",
+                "",
+                "Conversation context (oldest -> newest):",
+                thread_text,
+                "",
+                "Current initial draft from writer:",
+                current,
+                "",
+                "Judge the conversation context together with the current initial draft.",
+                "Give feedback only about how the current initial draft should change.",
+            ]
+        )
+    return "\n".join(
+        [
+            "Evaluation target: message",
+            "",
+            "Latest user message:",
+            user_text,
+            "",
+            "Current initial draft from writer:",
+            current,
+            "",
+            "Judge only the current initial draft.",
+            "Give feedback only about how the current initial draft should change.",
+        ]
+    )
+
+
 def _collect_message_list(thread_messages: list[ChatMessage]) -> list[dict[str, str]]:
     """Convert internal messages to OpenAI messages format."""
     return [msg.to_openai() for msg in thread_messages]
@@ -44,9 +115,8 @@ def _judge_pass_for_rule(
     max_tokens: int,
     system_prompt: str,
     rule: str,
-    thread_text: str,
-    user_text: str,
-    current: str,
+    rule_level: RuleLevel,
+    judge_target_text: str,
 ) -> tuple[bool, bool, str, UsageStats]:
     """Run one rule pass-check and return normalized applies/pass flags plus raw payload."""
     pass_res = chat_completion(
@@ -58,19 +128,10 @@ def _judge_pass_for_rule(
                 "role": "user",
                 "content": "\n".join(
                     [
+                        f"Rule level: {rule_level}",
                         f"Rule: {rule}",
                         "",
-                        "Conversation thread (oldest -> newest):",
-                        thread_text,
-                        "",
-                        "Latest user message:",
-                        user_text,
-                        "",
-                        "User prompt:",
-                        user_text,
-                        "",
-                        "Writer answer:",
-                        current,
+                        judge_target_text,
                     ]
                 ),
             },
@@ -97,9 +158,8 @@ def _judge_critique_for_rule(
     max_tokens: int,
     system_prompt: str,
     rule: str,
-    thread_text: str,
-    user_text: str,
-    current: str,
+    rule_level: RuleLevel,
+    judge_target_text: str,
 ) -> tuple[str, str, str, UsageStats]:
     """Run one rule critique and return parsed critique/fixes plus raw payload."""
     critique_res = chat_completion(
@@ -111,19 +171,10 @@ def _judge_critique_for_rule(
                 "role": "user",
                 "content": "\n".join(
                     [
+                        f"Rule level: {rule_level}",
                         f"Rule: {rule}",
                         "",
-                        "Conversation thread (oldest -> newest):",
-                        thread_text,
-                        "",
-                        "Latest user message:",
-                        user_text,
-                        "",
-                        "User prompt:",
-                        user_text,
-                        "",
-                        "Writer answer:",
-                        current,
+                        judge_target_text,
                         "",
                         "Explain what is wrong with the answer relative to the rule and what must be changed.",
                     ]
@@ -216,7 +267,8 @@ def run_constitutional_turn(
     """Run one writer/judge turn and return a full transcript object."""
     settings = config.settings
     prompts = config.prompts
-    rules = [line.strip() for line in config.rules if line.strip()]
+    rule_specs = [_parse_rule(line) for line in config.rules if line.strip()]
+    rules = [rule.raw for rule in rule_specs]
     started = time.perf_counter()
     deadline = (started + (settings.max_iteration_ms / 1000.0)) if settings.max_iteration_ms > 0 else None
 
@@ -294,6 +346,17 @@ def run_constitutional_turn(
     add_event(stage="initial_completed", message="Initial writer draft generated.")
 
     thread_text = _format_thread_for_prompt(thread_messages)
+    conversation_thread_text = _format_thread_for_prompt(
+        _conversation_messages_for_prompt(thread_messages, settings.conversation_context_messages)
+    )
+
+    def judge_target_text(rule_level: RuleLevel) -> str:
+        return _judge_target_for_prompt(
+            rule_level=rule_level,
+            thread_text=conversation_thread_text if rule_level == "conversation" else thread_text,
+            user_text=user_text,
+            current=current,
+        )
 
     if settings.execution_mode == "parallel":
         add_event(stage="parallel_started", message="Running in parallel mode.")
@@ -311,23 +374,22 @@ def run_constitutional_turn(
                             timeout_ms=settings.timeout_ms,
                             max_tokens=settings.max_tokens,
                             system_prompt=prompts.judge_pass_system,
-                            rule=pair[1],
-                            thread_text=thread_text,
-                            user_text=user_text,
-                            current=current,
+                            rule=pair[1].text,
+                            rule_level=pair[1].level,
+                            judge_target_text=judge_target_text(pair[1].level),
                         ),
-                        list(enumerate(rules)),
+                        list(enumerate(rule_specs)),
                     )
                 )
 
             failed_rule_indices: list[int] = []
             checks_for_round: list[JudgeCheck] = []
-            for rule_index, rule in enumerate(rules):
+            for rule_index, rule_spec in enumerate(rule_specs):
                 applies, passed, pass_raw, pass_usage = pass_results[rule_index]
                 check = JudgeCheck(
                     at=now_iso(),
                     rule_index=rule_index,
-                    rule=rule,
+                    rule=rule_spec.raw,
                     applies=applies,
                     passed=passed,
                     pass_raw=pass_raw,
@@ -381,10 +443,9 @@ def run_constitutional_turn(
                             timeout_ms=settings.timeout_ms,
                             max_tokens=settings.max_tokens,
                             system_prompt=prompts.judge_critique_system,
-                            rule=rules[idx],
-                            thread_text=thread_text,
-                            user_text=user_text,
-                            current=current,
+                            rule=rule_specs[idx].text,
+                            rule_level=rule_specs[idx].level,
+                            judge_target_text=judge_target_text(rule_specs[idx].level),
                         ),
                         failed_rule_indices,
                     )
@@ -452,7 +513,8 @@ def run_constitutional_turn(
             revision_rounds += 1
     else:
         add_event(stage="sequential_started", message="Running in sequential mode.")
-        for rule_index, rule in enumerate(rules):
+        for rule_index, rule_spec in enumerate(rule_specs):
+            rule = rule_spec.raw
             if should_halt():
                 break
             revisions_for_rule = 0
@@ -467,10 +529,9 @@ def run_constitutional_turn(
                     timeout_ms=settings.timeout_ms,
                     max_tokens=settings.max_tokens,
                     system_prompt=prompts.judge_pass_system,
-                    rule=rule,
-                    thread_text=thread_text,
-                    user_text=user_text,
-                    current=current,
+                    rule=rule_spec.text,
+                    rule_level=rule_spec.level,
+                    judge_target_text=judge_target_text(rule_spec.level),
                 )
 
                 critique = ""
@@ -485,10 +546,9 @@ def run_constitutional_turn(
                         timeout_ms=settings.timeout_ms,
                         max_tokens=settings.max_tokens,
                         system_prompt=prompts.judge_critique_system,
-                        rule=rule,
-                        thread_text=thread_text,
-                        user_text=user_text,
-                        current=current,
+                        rule=rule_spec.text,
+                        rule_level=rule_spec.level,
+                        judge_target_text=judge_target_text(rule_spec.level),
                     )
                     turn.usage.add(critique_usage)
 

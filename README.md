@@ -180,9 +180,10 @@ Config shape:
     "execution_mode": "sequential",
     "parallel_max_iterations": 0,
     "max_iteration_ms": 0,
-    "timeout_ms": 45000
+    "timeout_ms": 45000,
+    "conversation_context_messages": 10
   },
-  "rules": ["..."],
+  "rules": ["[message] ...", "[conversation] ..."],
   "prompts": {
     "writer_system": "...",
     "judge_pass_system": "...",
@@ -212,6 +213,8 @@ See [examples](./examples):
 
 - Turn transcripts include run-stage events, token usage, duration, judge critiques, and required fixes.
 - `max_iteration_ms` can stop long runs and return the latest revision.
+- Rules without `[message]` or `[conversation]` are treated as message rules.
+- Conversation rules use `conversation_context_messages` previous thread messages plus the current initial draft.
 - The engine no longer blocks execution on provider-side model listing; manual model entry works for unsupported providers and local models.
 - Do not commit API keys. The tracked default config has been cleaned to remove embedded credentials.
 
